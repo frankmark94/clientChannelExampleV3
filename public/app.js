@@ -268,12 +268,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // Clear timeout as we got a response
             if (pendingMessages.has(messageId)) {
                 clearTimeout(pendingMessages.get(messageId).timeoutId);
-                pendingMessages.delete(messageId);
+                
+                // Set up status polling for this message
+                if (data.messageStatus === 'sent') {
+                    // Start polling for status updates
+                    startStatusPolling(messageId);
+                }
             }
             
-            // Update message status with proper color coding
-            const status = data.status === 200 ? 'delivered' : 'error';
-            updateMessageStatus(messageId, status);
+            // Update message status based on server response
+            updateMessageStatus(messageId, data.messageStatus || (data.status === 200 ? 'sent' : 'error'));
             
             if (data.status !== 200) {
                 showError(`Error sending message: ${data.message}`);
@@ -302,6 +306,44 @@ document.addEventListener('DOMContentLoaded', () => {
             updateMessageStatus(messageId, 'error');
             showError('Error sending message: ' + error.message);
         });
+    }
+
+    // Add function to start polling for message status
+    function startStatusPolling(messageId) {
+        // Store the interval ID so we can clear it later
+        const intervalId = setInterval(() => {
+            fetch(`/api/message-status/${messageId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'delivered') {
+                        // Message delivered, update UI and stop polling
+                        updateMessageStatus(messageId, 'delivered');
+                        clearInterval(intervalId);
+                    } else if (data.status === 'error') {
+                        // Error occurred, update UI and stop polling
+                        updateMessageStatus(messageId, 'error');
+                        clearInterval(intervalId);
+                    }
+                    // If status is still 'sent' or 'unknown', keep polling
+                })
+                .catch(error => {
+                    console.error('Error checking message status:', error);
+                    // Don't stop polling on temporary errors
+                });
+        }, 3000); // Check every 3 seconds
+        
+        // Store the interval ID with the message for cleanup
+        if (pendingMessages.has(messageId)) {
+            pendingMessages.get(messageId).statusIntervalId = intervalId;
+            
+            // Set a timeout to stop polling after 60 seconds (to prevent infinite polling)
+            setTimeout(() => {
+                if (pendingMessages.has(messageId) && pendingMessages.get(messageId).statusIntervalId) {
+                    clearInterval(pendingMessages.get(messageId).statusIntervalId);
+                    pendingMessages.delete(messageId);
+                }
+            }, 60000);
+        }
     }
 
     // Check for new messages from the server

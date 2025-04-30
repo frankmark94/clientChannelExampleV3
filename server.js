@@ -34,16 +34,34 @@ const dms = dmsClientChannel(DMS_CONFIG);
 // Setup DMS callback handlers
 dms.onTextMessage = async (message) => {
   console.log('Text message received:', message);
+  
+  // If this message has a message_id, mark it as delivered
+  if (message && message.message_id) {
+    pendingMessages.set(message.message_id, 'delivered');
+  }
+  
   // In a real application, you would forward this to your client
 };
 
 dms.onRichContentMessage = async (message) => {
   console.log('Rich content message received:', message);
+  
+  // If this message has a message_id, mark it as delivered
+  if (message && message.message_id) {
+    pendingMessages.set(message.message_id, 'delivered');
+  }
+  
   // Forward to client
 };
 
 dms.onUrlLinkMessage = async (message) => {
   console.log('URL link message received:', message);
+  
+  // If this message has a message_id, mark it as delivered
+  if (message && message.message_id) {
+    pendingMessages.set(message.message_id, 'delivered');
+  }
+  
   // Forward to client
 };
 
@@ -57,17 +75,8 @@ dms.onCsrEndSession = async (customerId) => {
   // Forward to client
 };
 
-// DMS Webhook Endpoint
-app.post('/api/dms/webhook', (req, res) => {
-  try {
-    dms.onRequest(req, (status, message) => {
-      return res.status(status).send(message);
-    });
-  } catch (err) {
-    console.error('Error processing DMS webhook:', err);
-    return res.status(401).send(err.message);
-  }
-});
+// Create a messages map to track sent messages for delivery confirmation
+const pendingMessages = new Map();
 
 // API endpoint to send messages
 app.post('/api/messages', (req, res) => {
@@ -77,18 +86,79 @@ app.post('/api/messages', (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
   
+  // Update to change status to "sent" initially, not "delivered"
   dms.sendTextMessage(
     customerId,
     messageId,
     text,
     customerName || 'Customer',
     (response) => {
+      // Check if the request was successful (HTTP 2xx)
+      const isSuccessful = response.status >= 200 && response.status < 300;
+      
       return res.status(response.status).json({
         status: response.status,
-        message: response.statusText
+        message: response.statusText,
+        messageStatus: isSuccessful ? 'sent' : 'error', // Only mark as "sent", not "delivered" yet
+        messageId: messageId // Include messageId in response for tracking
       });
     }
   );
+});
+
+// New endpoint to update message status
+app.post('/api/message-status', (req, res) => {
+  const { messageId, status } = req.body;
+  
+  if (!messageId || !status) {
+    return res.status(400).json({ error: 'Missing messageId or status' });
+  }
+  
+  // Store the updated status
+  pendingMessages.set(messageId, status);
+  
+  return res.status(200).json({ success: true });
+});
+
+// New endpoint to check message status
+app.get('/api/message-status/:messageId', (req, res) => {
+  const messageId = req.params.messageId;
+  
+  if (pendingMessages.has(messageId)) {
+    return res.status(200).json({ 
+      messageId, 
+      status: pendingMessages.get(messageId) 
+    });
+  }
+  
+  return res.status(404).json({ 
+    messageId, 
+    status: 'unknown' 
+  });
+});
+
+// Enhance DMS webhook endpoint to update message status when DMS responds
+app.post('/api/dms/webhook', (req, res) => {
+  try {
+    // Log the incoming webhook payload
+    console.log('Received DMS webhook payload:', JSON.stringify(req.body, null, 2));
+    
+    // Process the webhook with DMS client
+    dms.onRequest(req, (status, message) => {
+      // Check if this is a message ack/receipt for a message we sent
+      if (req.body && req.body.message_id) {
+        console.log(`Received DMS confirmation for message: ${req.body.message_id}`);
+        
+        // Mark the message as delivered
+        pendingMessages.set(req.body.message_id, 'delivered');
+      }
+      
+      return res.status(status).send(message);
+    });
+  } catch (err) {
+    console.error('Error processing DMS webhook:', err);
+    return res.status(401).send(err.message);
+  }
 });
 
 // NEW ENDPOINT: API endpoint to ping DMS and check real connection
