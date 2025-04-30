@@ -16,6 +16,12 @@
             <div class="configuration-panel">
                 <h2>Configuration</h2>
                 <form id="configForm">
+                    <div class="form-group customer-id-field">
+                        <label for="customerId">⚠️ CUSTOMER ID ⚠️ <small>(required)</small></label>
+                        <input type="text" id="customerId" name="customerId" placeholder="Enter a permanent customer ID">
+                        <small class="form-hint">This ID must be set for messages to work properly</small>
+                    </div>
+                    
                     <div class="form-group">
                         <label for="connectionId">Connection ID</label>
                         <input type="text" id="connectionId" name="connectionId" placeholder="Enter your Channel ID">

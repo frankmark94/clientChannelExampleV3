@@ -42,6 +42,17 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Set up polling for messages (in a real app, you'd use WebSockets)
         setInterval(checkForNewMessages, 5000);
+
+        // Check if customer ID is set and show a warning if it's not
+        if (!customerId) {
+            showError('Please set a Customer ID in the configuration panel and save config');
+            // Visually highlight the customer ID field
+            if (customerIdInput) {
+                customerIdInput.classList.add('highlight-required');
+                // Scroll to the customer ID field
+                customerIdInput.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
     }
 
     // Load saved configuration from localStorage
@@ -52,14 +63,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (savedConfig.connectionId) connectionIdInput.value = savedConfig.connectionId;
             if (savedConfig.jwtSecret) jwtSecretInput.value = savedConfig.jwtSecret;
             if (savedConfig.apiUrl) apiUrlInput.value = savedConfig.apiUrl;
+            
+            // Handle Customer ID
             if (savedConfig.customerId) {
                 customerIdInput.value = savedConfig.customerId;
                 customerId = savedConfig.customerId; // Set the global customerId
+                console.log('Loaded Customer ID from saved config:', customerId);
             } else {
                 // Generate a default customer ID if none exists
                 const defaultCustomerId = generateRandomId();
                 customerIdInput.value = defaultCustomerId;
                 customerId = defaultCustomerId;
+                console.log('Generated new Customer ID:', customerId);
             }
             
             // Always set the webhook URL based on the current origin
@@ -73,6 +88,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error('Error loading configuration:', error);
+            // If there's an error, still generate a customer ID
+            if (!customerIdInput.value) {
+                const defaultCustomerId = generateRandomId();
+                customerIdInput.value = defaultCustomerId;
+                customerId = defaultCustomerId;
+                console.log('Generated emergency Customer ID:', customerId);
+            }
         }
     }
 
@@ -156,6 +178,12 @@ document.addEventListener('DOMContentLoaded', () => {
             saveConfiguration();
         });
         
+        // Special handling for customer ID field
+        customerIdInput.addEventListener('input', function() {
+            // Remove error highlighting when user starts typing
+            this.classList.remove('highlight-required');
+        });
+        
         // Send message on button click
         sendButton.addEventListener('click', sendMessage);
         
@@ -204,6 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // If no customer ID is provided, generate one
             customerId = generateRandomId();
             customerIdInput.value = customerId;
+            showStatus(`Generated a random Customer ID: ${customerId}`);
         }
         
         const config = {
@@ -254,6 +283,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Make sure we have a customerId before sending
         if (!customerId) {
             showError('Please set a Customer ID in the configuration panel and save config');
+            // Highlight the customer ID field
+            if (customerIdInput) {
+                customerIdInput.classList.add('highlight-required');
+                // Scroll to the customer ID field
+                customerIdInput.scrollIntoView({ behavior: 'smooth' });
+            }
             return;
         }
         
@@ -262,6 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Log message sending attempt
         console.log(`Sending message: ${messageId} - "${text}"`);
+        console.log(`Using Customer ID: ${customerId}`);
         
         // Add message to UI immediately (optimistic UI update)
         addMessageToUI({

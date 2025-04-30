@@ -54,6 +54,43 @@ body {
     border-radius: 5px;
 }
 
+/* Customer ID field special styling */
+.customer-id-field {
+    background-color: rgba(255, 215, 0, 0.2);
+    padding: 12px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    border: 2px solid #ffd700;
+    position: relative;
+}
+
+.customer-id-field::before {
+    content: "REQUIRED";
+    position: absolute;
+    top: -10px;
+    right: 10px;
+    background-color: #ff6b6b;
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+/* Highlight effect for required fields */
+.highlight-required {
+    animation: pulse-border 1.5s infinite;
+    border-color: #ff6b6b !important;
+    background-color: rgba(255, 107, 107, 0.1) !important;
+    box-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
+}
+
+@keyframes pulse-border {
+    0% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 107, 107, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0); }
+}
+
 .form-group {
     margin-bottom: 15px;
 }
@@ -62,12 +99,14 @@ body {
 .form-group label[for="customerId"] {
     color: #ffd700;
     font-weight: bold;
+    font-size: 1.1em;
 }
 
 .form-group input#customerId {
-    background-color: rgba(255, 215, 0, 0.1);
+    background-color: rgba(255, 255, 255, 0.9);
     border: 1px solid #ffd700;
     font-weight: bold;
+    font-size: 1.1em;
 }
 
 .form-group label {
