@@ -194,13 +194,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         
-        // Log tab switching
+        // Log tab switching - updated to actually filter displayed logs
         logTabs.forEach(tab => {
             tab.addEventListener('click', () => {
                 activeLogTab = tab.dataset.tab;
                 logTabs.forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
-                // In a real app, you'd update the log content based on the active tab
+                
+                // Actually filter log entries based on tab
+                const logEntries = logContent.querySelectorAll('.log-entry');
+                logEntries.forEach(entry => {
+                    if (entry.getAttribute('data-direction') === activeLogTab) {
+                        entry.style.display = 'block';
+                    } else {
+                        entry.style.display = 'none';
+                    }
+                });
             });
         });
         
@@ -259,18 +268,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 webhookUrl: webhookUrl // Always use the auto-generated URL
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            // Check if response is OK before trying to parse JSON
+            if (!response.ok) {
+                throw new Error(`Server responded with status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.success) {
                 showStatus(`Configuration saved successfully. Webhook URL: ${webhookUrl}`);
                 pingDMS(); // Ping DMS to verify actual connection after saving config
             } else {
-                showError('Error saving configuration');
+                showError('Error saving configuration: ' + (data.message || 'Unknown error'));
             }
         })
         .catch(error => {
             console.error('Error saving configuration:', error);
-            showError('Error saving configuration: ' + error.message);
+            
+            // More specific error message for JSON parsing errors
+            if (error.message && error.message.includes('Unexpected token')) {
+                showError('Error saving configuration: The server returned an invalid response. Please check the console for details.');
+            } else {
+                showError('Error saving configuration: ' + error.message);
+            }
         });
     }
 
@@ -690,6 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const logElement = document.createElement('div');
         logElement.classList.add('log-entry');
+        logElement.setAttribute('data-direction', direction); // Add direction attribute for filtering
         
         let timestamp = new Date().toISOString();
         if (message.timestamp) {
@@ -706,6 +728,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Scroll to bottom
         logContent.scrollTop = logContent.scrollHeight;
+        
+        // Update visibility based on active tab
+        if (direction !== activeLogTab) {
+            logElement.style.display = 'none';
+        }
     }
 
     // Show a status message in the UI
