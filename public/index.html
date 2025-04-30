@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Client Channel API Playground</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="sidebar">
+            <h1>Client Channel API Playground</h1>
+            
+            <div class="configuration-panel">
+                <h2>Configuration</h2>
+                <form id="configForm">
+                    <div class="form-group">
+                        <label for="connectionId">Connection ID</label>
+                        <input type="text" id="connectionId" name="connectionId" placeholder="Enter your Channel ID">
+                    </div>
+                    <div class="form-group">
+                        <label for="jwtSecret">JWT Secret</label>
+                        <input type="password" id="jwtSecret" name="jwtSecret" placeholder="Enter your JWT Secret">
+                    </div>
+                    <div class="form-group">
+                        <label for="clientWebhookUrl">Client Webhook URL</label>
+                        <input type="text" id="clientWebhookUrl" name="clientWebhookUrl" placeholder="https://your-webhook-url.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="apiUrl">Digital Messaging URL</label>
+                        <input type="text" id="apiUrl" name="apiUrl" placeholder="https://incoming.artemis.pega.digital/messages">
+                    </div>
+                    <button type="submit" class="btn save-config">Save Config</button>
+                </form>
+            </div>
+            
+            <div class="status-panel">
+                <h2>Status</h2>
+                <div class="status-indicator">
+                    <span class="status-dot disconnected"></span>
+                    <span class="status-text">Disconnected</span>
+                    <button class="btn ping-dms" id="pingButton" style="margin-left: auto;">
+                        <i class="fas fa-sync"></i> Test Connection
+                    </button>
+                </div>
+                <div class="console-log">
+                    <h3>Console Log</h3>
+                    <div class="log-tabs">
+                        <button class="log-tab active" data-tab="sent">→ Sent to DMS</button>
+                        <button class="log-tab" data-tab="received">← Received from DMS</button>
+                    </div>
+                    <div class="log-content" id="logContent">
+                        <!-- Logs will be dynamically inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2>Chat Session</h2>
+                <div class="chat-actions">
+                    <button class="btn end-session">End Session</button>
+                    <button class="btn simulate-csr">Simulate CSR Response</button>
+                </div>
+            </div>
+            
+            <div class="messages-container" id="messagesContainer">
+                <div class="chat-status">Chat session started. Send a message to begin.</div>
+                <!-- Messages will be dynamically inserted here -->
+            </div>
+            
+            <div class="input-container">
+                <input type="text" id="messageInput" placeholder="Type your message here...">
+                <button class="btn send-message" id="sendButton">
+                    <i class="fas fa-paper-plane"></i> Send
+                </button>
+                <div class="typing-indicator">
+                    <label for="typingCheckbox">
+                        <input type="checkbox" id="typingCheckbox"> Show Typing
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html> 

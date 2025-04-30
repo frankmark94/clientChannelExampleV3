@@ -1,0 +1,36 @@
+{
+  "name": "client-channel-api-playground",
+  "version": "1.0.0",
+  "description": "Playground for testing Pega's Client Channel API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "dms-client-channel": "latest",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "body-parser": "^1.20.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/client-channel-api-playground.git"
+  },
+  "keywords": [
+    "pega",
+    "client-channel",
+    "dms",
+    "digital-messaging",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT"
+} 

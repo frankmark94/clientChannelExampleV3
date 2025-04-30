@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: client-channel-api-playground
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        sync: false
+      - key: CHANNEL_ID
+        sync: false
+      - key: API_URL
+        sync: false 
