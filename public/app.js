@@ -92,8 +92,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 isConnected = data.connected;
                 
                 // If connection failed, show the error message
-                if (!isConnected && data.message) {
-                    showError(`DMS Connection failed: ${data.message}`);
+                if (!isConnected) {
+                    const errorMessage = data.message || 'Unknown error';
+                    showError(`DMS Connection failed: ${errorMessage}`);
+                    console.error('Connection test failed:', data);
+                } else {
+                    showStatus('Connection test successful');
                 }
                 
                 updateConnectionStatus();

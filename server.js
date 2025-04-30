@@ -103,10 +103,10 @@ app.get('/api/ping', (req, res) => {
   
   // Create a test message to ping the DMS
   const pingMessage = {
-    type: 'ping',
+    type: 'text',
     customer_id: 'ping-test-' + Date.now(),
     message_id: 'ping-' + Date.now(),
-    text: ['ping']
+    text: ['ping test message']
   };
   
   // Attempt to send a ping message to DMS
@@ -119,7 +119,7 @@ app.get('/api/ping', (req, res) => {
     return res.json({
       connected: isConnected,
       status: response.status,
-      message: response.statusText || 'Connection successful'
+      message: response.statusText || (isConnected ? 'Connection successful' : 'Connection failed: ' + (response.data || 'Unknown error'))
     });
   });
 });
