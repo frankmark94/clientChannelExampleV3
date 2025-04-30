@@ -378,6 +378,39 @@ body {
     text-align: center;
 }
 
+/* Menu Message */
+.menu-message {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.menu-title {
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+
+.menu-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.menu-button {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 15px;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.menu-button:hover {
+    background-color: #2980b9;
+}
+
 /* Typing indicator animation */
 .typing {
     align-self: flex-start;

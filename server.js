@@ -91,6 +91,19 @@ dms.onCsrEndSession = async (customerId) => {
   });
 };
 
+// Add a new handler for menu messages
+dms.onMenuMessage = async (message) => {
+  console.log('Menu message received from DMS:', JSON.stringify(message, null, 2));
+  
+  // If this message has a message_id, mark it as delivered
+  if (message && message.message_id) {
+    pendingMessages.set(message.message_id, 'delivered');
+  }
+  
+  // Store incoming messages to be fetched by clients
+  storeIncomingMessage(message);
+};
+
 // Create a messages map to track sent messages for delivery confirmation
 const pendingMessages = new Map();
 
@@ -222,6 +235,10 @@ app.post('/api/dms/webhook', (req, res) => {
             console.log('Processing rich content from DMS');
             // The onRichContentMessage callback should handle this
             break;
+          case 'menu':
+            console.log('Processing menu message from DMS');
+            // The onMenuMessage callback should handle this
+            break;
           default:
             console.log(`Unknown message type: ${req.body.type}`);
             // Store unknown message types anyway
@@ -287,22 +304,51 @@ app.get('/api/config', (req, res) => {
 app.post('/api/config', (req, res) => {
   const { jwtSecret, channelId, apiUrl, webhookUrl } = req.body;
   
+  let configChanged = false;
+  
   // In a production app, you would store these securely
   // For this demo, we're just updating the in-memory config
   
-  if (jwtSecret) DMS_CONFIG.JWT_SECRET = jwtSecret;
-  if (channelId) DMS_CONFIG.CHANNEL_ID = channelId;
-  if (apiUrl) DMS_CONFIG.API_URL = apiUrl;
+  if (jwtSecret && jwtSecret !== DMS_CONFIG.JWT_SECRET) {
+    DMS_CONFIG.JWT_SECRET = jwtSecret;
+    configChanged = true;
+  }
+  
+  if (channelId && channelId !== DMS_CONFIG.CHANNEL_ID) {
+    DMS_CONFIG.CHANNEL_ID = channelId;
+    configChanged = true;
+  }
+  
+  if (apiUrl && apiUrl !== DMS_CONFIG.API_URL) {
+    DMS_CONFIG.API_URL = apiUrl;
+    configChanged = true;
+  }
   
   // If webhook URL is provided, update it in the config
   // This should be a URL that DMS can call back to, like your /api/dms/webhook endpoint
-  if (webhookUrl) {
+  if (webhookUrl && webhookUrl !== DMS_CONFIG.WEBHOOK_URL) {
     console.log(`Setting webhook URL to: ${webhookUrl}`);
     DMS_CONFIG.WEBHOOK_URL = webhookUrl;
+    configChanged = true;
   }
   
-  // Reinitialize DMS client with new config
-  Object.assign(dms, dmsClientChannel(DMS_CONFIG));
+  // Only reinitialize DMS client if config changed
+  if (configChanged) {
+    console.log('Config changed, reinitializing DMS client');
+    // Create a new instance with the updated config
+    const newDms = dmsClientChannel(DMS_CONFIG);
+    
+    // Transfer all the callback handlers from the old instance
+    newDms.onTextMessage = dms.onTextMessage;
+    newDms.onRichContentMessage = dms.onRichContentMessage;
+    newDms.onUrlLinkMessage = dms.onUrlLinkMessage;
+    newDms.onTypingIndicator = dms.onTypingIndicator;
+    newDms.onCsrEndSession = dms.onCsrEndSession;
+    newDms.onMenuMessage = dms.onMenuMessage;
+    
+    // Replace the old instance with the new one
+    dms = newDms;
+  }
   
   console.log('Updated DMS configuration:', {
     JWT_SECRET: DMS_CONFIG.JWT_SECRET ? '****' : undefined,

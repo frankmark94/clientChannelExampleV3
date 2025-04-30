@@ -459,6 +459,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 break;
                 
+            case 'menu':
+                // Display menu message with buttons
+                addMessageToUI({
+                    id: message.message_id,
+                    type: 'menu',
+                    title: message.title,
+                    items: message.items,
+                    isUser: false,
+                    timestamp: message.timestamp,
+                    status: 'received',
+                    sender: message.author === 'bot' ? 'Bot' : (message.csr_name || 'Agent')
+                });
+                
+                // Add to console log
+                addToConsoleLog({
+                    direction: 'received',
+                    message: message
+                });
+                break;
+                
             case 'typing_indicator':
                 // Show typing indicator
                 showTypingIndicator(true);
@@ -537,6 +557,40 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${formatTimestamp(message.timestamp)} ${message.status ? `• <span class="status-${message.status}">${message.status}</span>` : ''}
                 </div>
             `;
+        } else if (message.type === 'menu') {
+            let buttonsHTML = '';
+            if (message.items && Array.isArray(message.items)) {
+                buttonsHTML = message.items.map(item => {
+                    return `<button class="menu-button" data-payload="${item.payload || item.text}">${item.text}</button>`;
+                }).join('');
+            }
+            
+            messageElement.innerHTML = `
+                <div class="menu-message">
+                    <div class="menu-title">${message.title || ''}</div>
+                    <div class="menu-buttons">${buttonsHTML}</div>
+                </div>
+                <div class="message-info">
+                    ${message.sender ? `<span class="message-sender">${message.sender}</span> • ` : ''}
+                    ${formatTimestamp(message.timestamp)} ${message.status ? `• <span class="status-${message.status}">${message.status}</span>` : ''}
+                </div>
+            `;
+            
+            // Add event listeners to menu buttons
+            setTimeout(() => {
+                const buttons = messageElement.querySelectorAll('.menu-button');
+                buttons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const payload = this.getAttribute('data-payload');
+                        if (payload) {
+                            // Set the message input to the payload
+                            messageInput.value = payload;
+                            // Send the message
+                            sendMessage();
+                        }
+                    });
+                });
+            }, 100);
         } else {
             messageElement.innerHTML = `
                 <div>${Array.isArray(message.text) ? message.text.join('<br>') : message.text}</div>
