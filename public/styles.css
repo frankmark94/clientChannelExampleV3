@@ -360,12 +360,14 @@ body {
 
 /* Typing indicator animation */
 .typing {
+    align-self: flex-start;
     display: flex;
     align-items: center;
     gap: 5px;
-    padding: 10px;
-    background-color: #f1f1f1;
-    border-radius: 20px;
+    padding: 10px 15px;
+    background-color: #bdc3c7;
+    border-radius: 10px;
+    border-bottom-left-radius: 0;
     width: fit-content;
     margin: 5px 0;
 }
@@ -390,4 +392,29 @@ body {
     0% { transform: translateY(0); }
     50% { transform: translateY(-5px); }
     100% { transform: translateY(0); }
+}
+
+/* Message styling improvements */
+.message-sender {
+    font-weight: 500;
+    color: #34495e;
+}
+
+.system-message .message-sender {
+    color: #7f8c8d;
+}
+
+/* Status colors */
+.status-received {
+    color: #2980b9;
+}
+
+/* Incoming message animation */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.system-message {
+    animation: fadeIn 0.3s ease-out;
 } 

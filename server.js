@@ -34,50 +34,82 @@ const dms = dmsClientChannel(DMS_CONFIG);
 
 // Setup DMS callback handlers
 dms.onTextMessage = async (message) => {
-  console.log('Text message received:', message);
+  console.log('Text message received from DMS:', JSON.stringify(message, null, 2));
   
   // If this message has a message_id, mark it as delivered
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
   
-  // In a real application, you would forward this to your client
+  // Store incoming messages to be fetched by clients
+  storeIncomingMessage(message);
 };
 
 dms.onRichContentMessage = async (message) => {
-  console.log('Rich content message received:', message);
+  console.log('Rich content message received from DMS:', JSON.stringify(message, null, 2));
   
   // If this message has a message_id, mark it as delivered
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
   
-  // Forward to client
+  // Store incoming messages to be fetched by clients
+  storeIncomingMessage(message);
 };
 
 dms.onUrlLinkMessage = async (message) => {
-  console.log('URL link message received:', message);
+  console.log('URL link message received from DMS:', JSON.stringify(message, null, 2));
   
   // If this message has a message_id, mark it as delivered
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
   
-  // Forward to client
+  // Store incoming messages to be fetched by clients
+  storeIncomingMessage(message);
 };
 
 dms.onTypingIndicator = async (customerId) => {
   console.log('Typing indicator received for customer:', customerId);
-  // Forward to client
+  
+  // Store typing indicator event
+  incomingMessages.push({
+    type: 'typing_indicator',
+    customer_id: customerId,
+    timestamp: new Date().toISOString()
+  });
 };
 
 dms.onCsrEndSession = async (customerId) => {
   console.log('CSR ended session for customer:', customerId);
-  // Forward to client
+  
+  // Store end session event
+  incomingMessages.push({
+    type: 'end_session',
+    customer_id: customerId,
+    timestamp: new Date().toISOString()
+  });
 };
 
 // Create a messages map to track sent messages for delivery confirmation
 const pendingMessages = new Map();
+
+// Create a store for incoming messages to be polled by clients
+const incomingMessages = [];
+
+// Helper function to store incoming messages
+function storeIncomingMessage(message) {
+  // Add timestamp if not present
+  if (!message.timestamp) {
+    message.timestamp = new Date().toISOString();
+  }
+  
+  // Add the message to our store
+  incomingMessages.push(message);
+  
+  console.log(`Stored incoming message for customer: ${message.customer_id}`);
+  console.log(`Total stored messages: ${incomingMessages.length}`);
+}
 
 // API endpoint to send messages
 app.post('/api/messages', (req, res) => {
@@ -106,11 +138,19 @@ app.post('/api/messages', (req, res) => {
     
     console.log('DMS Response:', response.status, response.statusText, response.data);
     
+    // If the response is successful, mark the message as delivered immediately
+    // since we know DMS received it (200 OK response)
+    if (isSuccessful) {
+      console.log(`Message ${messageId} successfully delivered to DMS, marking as delivered`);
+      pendingMessages.set(messageId, 'delivered');
+    }
+    
     return res.status(response.status).json({
       status: response.status,
       message: response.statusText,
-      messageStatus: isSuccessful ? 'sent' : 'error',
-      messageId: messageId
+      messageStatus: isSuccessful ? 'delivered' : 'error', // Change from 'sent' to 'delivered'
+      messageId: messageId,
+      dmsResponse: response.data // Include the DMS response data for client visibility
     });
   });
 });
@@ -153,8 +193,6 @@ app.post('/api/dms/webhook', (req, res) => {
     console.log('Received DMS webhook payload:', JSON.stringify(req.body, null, 2));
     console.log('Webhook headers:', JSON.stringify(req.headers, null, 2));
     
-    // Create a socket event here to forward to client if needed
-    
     // Process the webhook with DMS client
     dms.onRequest(req, (status, message) => {
       // Log all details of the request processing
@@ -167,9 +205,6 @@ app.post('/api/dms/webhook', (req, res) => {
         
         // Mark the message as delivered
         pendingMessages.set(req.body.message_id, 'delivered');
-        
-        // In a real-world app, you would notify connected clients about the status change
-        // e.g., using WebSockets or SSE
       }
       
       // Additional processing for different message types
@@ -177,18 +212,25 @@ app.post('/api/dms/webhook', (req, res) => {
         switch(req.body.type) {
           case 'text':
             console.log('Processing text message from DMS');
-            // Handle text message
+            // The onTextMessage callback should handle this
             break;
           case 'link_button':
             console.log('Processing link button from DMS');
-            // Handle link button
+            // The onUrlLinkMessage callback should handle this
             break;
           case 'rich_content':
             console.log('Processing rich content from DMS');
-            // Handle rich content
+            // The onRichContentMessage callback should handle this
             break;
           default:
             console.log(`Unknown message type: ${req.body.type}`);
+            // Store unknown message types anyway
+            storeIncomingMessage(req.body);
+        }
+      } else {
+        // If no message type but we have a body, store it anyway
+        if (req.body) {
+          storeIncomingMessage(req.body);
         }
       }
       
@@ -270,6 +312,27 @@ app.post('/api/config', (req, res) => {
   });
   
   res.json({ success: true });
+});
+
+// New endpoint to get pending incoming messages for a customer
+app.get('/api/messages/:customerId', (req, res) => {
+  const customerId = req.params.customerId;
+  // Get the last timestamp if provided
+  const lastTimestamp = req.query.since || '1970-01-01T00:00:00.000Z';
+  
+  console.log(`Getting messages for customer ${customerId} since ${lastTimestamp}`);
+  
+  // Filter messages for this customer that are newer than the last timestamp
+  const newMessages = incomingMessages.filter(msg => 
+    msg.customer_id === customerId && msg.timestamp > lastTimestamp
+  );
+  
+  console.log(`Found ${newMessages.length} new messages for customer ${customerId}`);
+  
+  res.json({
+    customerId,
+    messages: newMessages
+  });
 });
 
 // Catch all routes and redirect to the index file

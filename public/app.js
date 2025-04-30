@@ -384,11 +384,133 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check for new messages from the server
     function checkForNewMessages() {
-        // In a real application, this would be implemented with WebSockets
-        // or server-sent events instead of polling
+        if (!isConnected || !activeChatSession) return;
         
-        // For this demo, we'll simulate messages coming in
-        // In a real app, you'd make an API call to get new messages
+        // Track when we last checked for messages
+        if (!window.lastMessageCheck) {
+            window.lastMessageCheck = new Date(0).toISOString(); // Start from beginning of time
+        }
+        
+        // Fetch new messages for this customer
+        fetch(`/api/messages/${customerId}?since=${encodeURIComponent(window.lastMessageCheck)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.messages && data.messages.length > 0) {
+                    console.log(`Received ${data.messages.length} new messages from DMS`);
+                    
+                    // Update the last check time to the most recent message
+                    const timestamps = data.messages.map(msg => msg.timestamp);
+                    window.lastMessageCheck = new Date(Math.max(...timestamps.map(t => new Date(t).getTime()))).toISOString();
+                    
+                    // Process and display each message
+                    data.messages.forEach(message => {
+                        processIncomingMessage(message);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error checking for new messages:', error);
+            });
+    }
+
+    // Process incoming message from DMS
+    function processIncomingMessage(message) {
+        console.log('Processing incoming message:', message);
+        
+        switch (message.type) {
+            case 'text':
+                // Display text message from CSR/bot
+                addMessageToUI({
+                    id: message.message_id,
+                    text: Array.isArray(message.text) ? message.text.join('\n') : message.text,
+                    isUser: false,
+                    timestamp: message.timestamp,
+                    status: 'received',
+                    sender: message.csr_name || 'Agent'
+                });
+                
+                // Add to console log
+                addToConsoleLog({
+                    direction: 'received',
+                    message: message
+                });
+                break;
+                
+            case 'link_button':
+                // Display link message
+                addMessageToUI({
+                    id: message.message_id,
+                    type: 'link_button',
+                    title: message.title,
+                    label: message.label,
+                    url: message.url,
+                    isUser: false,
+                    timestamp: message.timestamp,
+                    status: 'received',
+                    sender: message.csr_name || 'Agent'
+                });
+                
+                // Add to console log
+                addToConsoleLog({
+                    direction: 'received',
+                    message: message
+                });
+                break;
+                
+            case 'typing_indicator':
+                // Show typing indicator
+                showTypingIndicator(true);
+                
+                // Auto-hide after 3 seconds
+                setTimeout(() => {
+                    showTypingIndicator(false);
+                }, 3000);
+                break;
+                
+            case 'end_session':
+                // End the session
+                endSession();
+                showStatus('Agent has ended the conversation');
+                break;
+                
+            default:
+                console.log(`Unknown message type: ${message.type}`);
+                // Try to display as a text message anyway
+                if (message.text || message.content?.text) {
+                    addMessageToUI({
+                        id: message.message_id,
+                        text: message.text || message.content?.text,
+                        isUser: false,
+                        timestamp: message.timestamp,
+                        status: 'received',
+                        sender: message.csr_name || 'Agent'
+                    });
+                }
+        }
+    }
+
+    // Show/hide typing indicator
+    function showTypingIndicator(show) {
+        // Remove existing typing indicator if present
+        const existingIndicator = document.getElementById('typingIndicator');
+        if (existingIndicator) {
+            existingIndicator.remove();
+        }
+        
+        if (show) {
+            const typingElement = document.createElement('div');
+            typingElement.classList.add('typing');
+            typingElement.innerHTML = `
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            `;
+            typingElement.id = 'typingIndicator';
+            
+            // Add to messages container
+            messagesContainer.appendChild(typingElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
     }
 
     // Add a message to the UI
@@ -409,6 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <a href="${message.url}" target="_blank" class="link-button">${message.label}</a>
                 </div>
                 <div class="message-info">
+                    ${message.sender ? `<span class="message-sender">${message.sender}</span> • ` : ''}
                     ${formatTimestamp(message.timestamp)} ${message.status ? `• <span class="status-${message.status}">${message.status}</span>` : ''}
                 </div>
             `;
@@ -416,6 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
             messageElement.innerHTML = `
                 <div>${Array.isArray(message.text) ? message.text.join('<br>') : message.text}</div>
                 <div class="message-info">
+                    ${message.sender ? `<span class="message-sender">${message.sender}</span> • ` : ''}
                     ${formatTimestamp(message.timestamp)} ${message.status ? `• <span class="status-${message.status}">${message.status}</span>` : ''}
                 </div>
             `;
