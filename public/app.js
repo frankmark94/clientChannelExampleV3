@@ -196,6 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Always use the auto-generated webhook URL based on the current origin
         const deployedUrl = window.location.origin; // e.g., https://your-app.onrender.com
         const webhookUrl = `${deployedUrl}/api/dms/webhook`;
+        clientWebhookUrlInput.value = webhookUrl; // Update the input field with the current URL
         
         // Update the global customerId with the input value
         customerId = customerIdInput.value.trim();
@@ -249,6 +250,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = messageInput.value.trim();
         
         if (!text || !isConnected || !activeChatSession) return;
+        
+        // Make sure we have a customerId before sending
+        if (!customerId) {
+            showError('Please set a Customer ID in the configuration panel and save config');
+            return;
+        }
         
         const messageId = generateRandomId();
         const timestamp = new Date().toISOString();

@@ -58,6 +58,18 @@ body {
     margin-bottom: 15px;
 }
 
+/* Highlight the Customer ID field to make it more prominent */
+.form-group label[for="customerId"] {
+    color: #ffd700;
+    font-weight: bold;
+}
+
+.form-group input#customerId {
+    background-color: rgba(255, 215, 0, 0.1);
+    border: 1px solid #ffd700;
+    font-weight: bold;
+}
+
 .form-group label {
     display: block;
     margin-bottom: 5px;
