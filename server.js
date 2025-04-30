@@ -117,6 +117,44 @@ function storeIncomingMessage(message) {
     message.timestamp = new Date().toISOString();
   }
   
+  // Handle special case for Pega message format
+  // Extract text from Pega's specific JSON structure if needed
+  if (message.pyEntryText && typeof message.pyEntryText === 'string') {
+    try {
+      // Try to parse the JSON text that Pega sends
+      const parsedText = JSON.parse(message.pyEntryText);
+      
+      // Create a more standard message format
+      if (parsedText.text) {
+        message.text = Array.isArray(parsedText.text) ? parsedText.text : [parsedText.text];
+      }
+      
+      // Copy other fields we might need
+      message.customer_id = message.pyCustomerId || message.customer_id;
+      
+      console.log(`Converted Pega format message for customer ${message.customer_id}`);
+    } catch (e) {
+      // If not JSON, just use it as is
+      message.text = [message.pyEntryText];
+      console.log(`Using Pega message text as-is: ${message.pyEntryText}`);
+    }
+  }
+  
+  // Map the customer ID if the message comes from Pega
+  // This allows the client to find messages with the same logical ID
+  if (message.customer && message.customer.id && !message.customer_id) {
+    // This is a message from Pega with UUID customer ID
+    
+    // Look at profile_id to see if it matches one of our logical IDs
+    if (message.customer.profile_id) {
+      console.log(`Mapping Pega customer UUID ${message.customer.id} to profile_id ${message.customer.profile_id}`);
+      message.customer_id = message.customer.profile_id;
+    } else {
+      // Just use the UUID as the customer_id so it can be found
+      message.customer_id = message.customer.id;
+    }
+  }
+  
   // Add the message to our store
   incomingMessages.push(message);
   
@@ -388,16 +426,42 @@ app.get('/api/messages/:customerId', (req, res) => {
   
   console.log(`Getting messages for customer ${customerId} since ${lastTimestamp}`);
   
-  // Filter messages for this customer that are newer than the last timestamp
-  const newMessages = incomingMessages.filter(msg => 
-    msg.customer_id === customerId && msg.timestamp > lastTimestamp
-  );
+  // ORIGINAL LOGIC: Filter messages for this customer that are newer than the last timestamp
+  // const newMessages = incomingMessages.filter(msg => 
+  //   msg.customer_id === customerId && msg.timestamp > lastTimestamp
+  // );
+  
+  // NEW LOGIC: Check for profile_id (used by Pega) or customer_id (used locally)
+  const newMessages = incomingMessages.filter(msg => {
+    const matchesCustomerId = msg.customer_id === customerId;
+    const matchesProfileId = msg.customer && msg.customer.profile_id === customerId;
+    const newerThanTimestamp = msg.timestamp > lastTimestamp;
+    
+    // Check for deeply nested customer_id in Pega's response format
+    const pegaCustomerId = msg.customer && msg.customer.id;
+    
+    // Log all messages we're filtering through to help debug
+    console.log(`Message: ${JSON.stringify(msg)}, Matches ID: ${matchesCustomerId || matchesProfileId}, UUID: ${pegaCustomerId || 'none'}`);
+    
+    return (matchesCustomerId || matchesProfileId) && newerThanTimestamp;
+  });
   
   console.log(`Found ${newMessages.length} new messages for customer ${customerId}`);
   
   res.json({
     customerId,
     messages: newMessages
+  });
+});
+
+// DEBUG Endpoint: Add a new endpoint to see all stored messages
+app.get('/api/debug/messages', (req, res) => {
+  console.log(`DEBUG: Dumping all ${incomingMessages.length} messages currently stored`);
+  
+  // Return all messages regardless of customer ID
+  res.json({
+    count: incomingMessages.length,
+    messages: incomingMessages
   });
 });
 
