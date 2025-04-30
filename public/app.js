@@ -50,8 +50,12 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (savedConfig.connectionId) connectionIdInput.value = savedConfig.connectionId;
             if (savedConfig.jwtSecret) jwtSecretInput.value = savedConfig.jwtSecret;
-            if (savedConfig.clientWebhookUrl) clientWebhookUrlInput.value = savedConfig.clientWebhookUrl;
             if (savedConfig.apiUrl) apiUrlInput.value = savedConfig.apiUrl;
+            
+            // Always set the webhook URL based on the current origin
+            const deployedUrl = window.location.origin; // e.g., https://your-app.onrender.com
+            const webhookUrl = `${deployedUrl}/api/dms/webhook`;
+            clientWebhookUrlInput.value = webhookUrl;
             
             if (savedConfig.connectionId && savedConfig.jwtSecret && savedConfig.apiUrl) {
                 // Ping DMS to check actual connection status
@@ -179,21 +183,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Save configuration to server and localStorage
     function saveConfiguration() {
+        // Always use the auto-generated webhook URL based on the current origin
+        const deployedUrl = window.location.origin; // e.g., https://your-app.onrender.com
+        const webhookUrl = `${deployedUrl}/api/dms/webhook`;
+        
         const config = {
             connectionId: connectionIdInput.value.trim(),
             jwtSecret: jwtSecretInput.value.trim(),
-            clientWebhookUrl: clientWebhookUrlInput.value.trim(),
+            clientWebhookUrl: webhookUrl, // Always use the auto-generated URL
             apiUrl: apiUrlInput.value.trim()
         };
         
         // Save to localStorage
         localStorage.setItem('dmsConfig', JSON.stringify(config));
-        
-        // Construct a webhook URL that DMS can call back to
-        // For local development, this would typically be an ngrok URL pointing to your webhook endpoint
-        // For production, it should be your deployed app's webhook endpoint
-        const deployedUrl = window.location.origin; // e.g., https://your-app.onrender.com
-        const webhookUrl = config.clientWebhookUrl || `${deployedUrl}/api/dms/webhook`;
         
         // Send to server
         fetch('/api/config', {
@@ -205,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 channelId: config.connectionId,
                 jwtSecret: config.jwtSecret,
                 apiUrl: config.apiUrl,
-                webhookUrl: webhookUrl
+                webhookUrl: webhookUrl // Always use the auto-generated URL
             })
         })
         .then(response => response.json())
