@@ -17,7 +17,8 @@ const PORT = process.env.PORT || 3000;
 const DMS_CONFIG = {
   JWT_SECRET: process.env.JWT_SECRET || '',
   CHANNEL_ID: process.env.CHANNEL_ID || '',
-  API_URL: process.env.API_URL || ''
+  API_URL: process.env.API_URL || '',
+  WEBHOOK_URL: process.env.WEBHOOK_URL || ''
 };
 
 // Initialize the app
@@ -86,24 +87,32 @@ app.post('/api/messages', (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
   
-  // Update to change status to "sent" initially, not "delivered"
-  dms.sendTextMessage(
-    customerId,
-    messageId,
-    text,
-    customerName || 'Customer',
-    (response) => {
-      // Check if the request was successful (HTTP 2xx)
-      const isSuccessful = response.status >= 200 && response.status < 300;
-      
-      return res.status(response.status).json({
-        status: response.status,
-        message: response.statusText,
-        messageStatus: isSuccessful ? 'sent' : 'error', // Only mark as "sent", not "delivered" yet
-        messageId: messageId // Include messageId in response for tracking
-      });
-    }
-  );
+  // Create a message object identical to the format we use for ping
+  const messageObject = {
+    type: 'text',
+    customer_id: customerId,
+    message_id: messageId,
+    text: Array.isArray(text) ? text : [text],
+    customer_name: customerName || 'Customer',
+    timestamp: new Date().toISOString()
+  };
+  
+  console.log('Sending message to DMS:', JSON.stringify(messageObject, null, 2));
+  
+  // Use sendMessage instead of sendTextMessage to ensure consistent format
+  dms.sendMessage(messageObject, (response) => {
+    // Check if the request was successful (HTTP 2xx)
+    const isSuccessful = response.status >= 200 && response.status < 300;
+    
+    console.log('DMS Response:', response.status, response.statusText, response.data);
+    
+    return res.status(response.status).json({
+      status: response.status,
+      message: response.statusText,
+      messageStatus: isSuccessful ? 'sent' : 'error',
+      messageId: messageId
+    });
+  });
 });
 
 // New endpoint to update message status
@@ -142,15 +151,45 @@ app.post('/api/dms/webhook', (req, res) => {
   try {
     // Log the incoming webhook payload
     console.log('Received DMS webhook payload:', JSON.stringify(req.body, null, 2));
+    console.log('Webhook headers:', JSON.stringify(req.headers, null, 2));
+    
+    // Create a socket event here to forward to client if needed
     
     // Process the webhook with DMS client
     dms.onRequest(req, (status, message) => {
+      // Log all details of the request processing
+      console.log('DMS onRequest processed with status:', status);
+      console.log('DMS onRequest message:', message);
+      
       // Check if this is a message ack/receipt for a message we sent
       if (req.body && req.body.message_id) {
         console.log(`Received DMS confirmation for message: ${req.body.message_id}`);
         
         // Mark the message as delivered
         pendingMessages.set(req.body.message_id, 'delivered');
+        
+        // In a real-world app, you would notify connected clients about the status change
+        // e.g., using WebSockets or SSE
+      }
+      
+      // Additional processing for different message types
+      if (req.body && req.body.type) {
+        switch(req.body.type) {
+          case 'text':
+            console.log('Processing text message from DMS');
+            // Handle text message
+            break;
+          case 'link_button':
+            console.log('Processing link button from DMS');
+            // Handle link button
+            break;
+          case 'rich_content':
+            console.log('Processing rich content from DMS');
+            // Handle rich content
+            break;
+          default:
+            console.log(`Unknown message type: ${req.body.type}`);
+        }
       }
       
       return res.status(status).send(message);
@@ -204,7 +243,7 @@ app.get('/api/config', (req, res) => {
 
 // API endpoint to update configuration
 app.post('/api/config', (req, res) => {
-  const { jwtSecret, channelId, apiUrl } = req.body;
+  const { jwtSecret, channelId, apiUrl, webhookUrl } = req.body;
   
   // In a production app, you would store these securely
   // For this demo, we're just updating the in-memory config
@@ -213,8 +252,22 @@ app.post('/api/config', (req, res) => {
   if (channelId) DMS_CONFIG.CHANNEL_ID = channelId;
   if (apiUrl) DMS_CONFIG.API_URL = apiUrl;
   
+  // If webhook URL is provided, update it in the config
+  // This should be a URL that DMS can call back to, like your /api/dms/webhook endpoint
+  if (webhookUrl) {
+    console.log(`Setting webhook URL to: ${webhookUrl}`);
+    DMS_CONFIG.WEBHOOK_URL = webhookUrl;
+  }
+  
   // Reinitialize DMS client with new config
   Object.assign(dms, dmsClientChannel(DMS_CONFIG));
+  
+  console.log('Updated DMS configuration:', {
+    JWT_SECRET: DMS_CONFIG.JWT_SECRET ? '****' : undefined,
+    CHANNEL_ID: DMS_CONFIG.CHANNEL_ID,
+    API_URL: DMS_CONFIG.API_URL,
+    WEBHOOK_URL: DMS_CONFIG.WEBHOOK_URL
+  });
   
   res.json({ success: true });
 });

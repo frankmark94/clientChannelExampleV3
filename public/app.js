@@ -189,6 +189,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Save to localStorage
         localStorage.setItem('dmsConfig', JSON.stringify(config));
         
+        // Construct a webhook URL that DMS can call back to
+        // For local development, this would typically be an ngrok URL pointing to your webhook endpoint
+        // For production, it should be your deployed app's webhook endpoint
+        const deployedUrl = window.location.origin; // e.g., https://your-app.onrender.com
+        const webhookUrl = config.clientWebhookUrl || `${deployedUrl}/api/dms/webhook`;
+        
         // Send to server
         fetch('/api/config', {
             method: 'POST',
@@ -198,13 +204,14 @@ document.addEventListener('DOMContentLoaded', () => {
             body: JSON.stringify({
                 channelId: config.connectionId,
                 jwtSecret: config.jwtSecret,
-                apiUrl: config.apiUrl
+                apiUrl: config.apiUrl,
+                webhookUrl: webhookUrl
             })
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showStatus('Configuration saved successfully');
+                showStatus(`Configuration saved successfully. Webhook URL: ${webhookUrl}`);
                 pingDMS(); // Ping DMS to verify actual connection after saving config
             } else {
                 showError('Error saving configuration');
@@ -225,6 +232,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const messageId = generateRandomId();
         const timestamp = new Date().toISOString();
         
+        // Log message sending attempt
+        console.log(`Sending message: ${messageId} - "${text}"`);
+        
         // Add message to UI immediately (optimistic UI update)
         addMessageToUI({
             id: messageId,
@@ -240,12 +250,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add message to pending messages with timeout
         pendingMessages.set(messageId, {
             timestamp,
+            text,
             timeoutId: setTimeout(() => {
                 // If message hasn't received response within timeout period
                 if (pendingMessages.has(messageId)) {
                     pendingMessages.delete(messageId);
                     updateMessageStatus(messageId, 'timeout');
                     showError(`Message timed out after ${MESSAGE_TIMEOUT/1000} seconds`);
+                    console.error(`Message ${messageId} timed out waiting for response`);
                 }
             }, MESSAGE_TIMEOUT)
         });
@@ -265,14 +277,20 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .then(response => response.json())
         .then(data => {
+            console.log(`Server response for message ${messageId}:`, data);
+            
             // Clear timeout as we got a response
             if (pendingMessages.has(messageId)) {
                 clearTimeout(pendingMessages.get(messageId).timeoutId);
                 
-                // Set up status polling for this message
+                // Set up status polling for this message if it was sent successfully
                 if (data.messageStatus === 'sent') {
+                    console.log(`Message ${messageId} sent successfully to DMS. Starting polling for delivery confirmation.`);
                     // Start polling for status updates
                     startStatusPolling(messageId);
+                } else {
+                    console.error(`Failed to send message ${messageId} to DMS:`, data);
+                    pendingMessages.delete(messageId);
                 }
             }
             
@@ -310,24 +328,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Add function to start polling for message status
     function startStatusPolling(messageId) {
+        console.log(`Starting status polling for message ${messageId}`);
         // Store the interval ID so we can clear it later
         const intervalId = setInterval(() => {
             fetch(`/api/message-status/${messageId}`)
                 .then(response => response.json())
                 .then(data => {
+                    console.log(`Status poll for message ${messageId}: ${data.status}`);
                     if (data.status === 'delivered') {
                         // Message delivered, update UI and stop polling
+                        console.log(`Message ${messageId} confirmed delivered by DMS`);
                         updateMessageStatus(messageId, 'delivered');
                         clearInterval(intervalId);
+                        showStatus(`Message delivered successfully!`);
+                        
+                        // Clean up the pending message
+                        if (pendingMessages.has(messageId)) {
+                            pendingMessages.delete(messageId);
+                        }
                     } else if (data.status === 'error') {
                         // Error occurred, update UI and stop polling
+                        console.error(`Message ${messageId} reported error status by DMS`);
                         updateMessageStatus(messageId, 'error');
                         clearInterval(intervalId);
+                        
+                        // Clean up the pending message
+                        if (pendingMessages.has(messageId)) {
+                            pendingMessages.delete(messageId);
+                        }
                     }
                     // If status is still 'sent' or 'unknown', keep polling
                 })
                 .catch(error => {
-                    console.error('Error checking message status:', error);
+                    console.error(`Error checking status for message ${messageId}:`, error);
                     // Don't stop polling on temporary errors
                 });
         }, 3000); // Check every 3 seconds
@@ -339,7 +372,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Set a timeout to stop polling after 60 seconds (to prevent infinite polling)
             setTimeout(() => {
                 if (pendingMessages.has(messageId) && pendingMessages.get(messageId).statusIntervalId) {
+                    console.log(`Stopping status polling for message ${messageId} after timeout`);
                     clearInterval(pendingMessages.get(messageId).statusIntervalId);
+                    updateMessageStatus(messageId, 'unknown');
+                    showStatus(`Message status unknown. DMS may not be responding.`);
                     pendingMessages.delete(messageId);
                 }
             }, 60000);
