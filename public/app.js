@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const jwtSecretInput = document.getElementById('jwtSecret');
     const clientWebhookUrlInput = document.getElementById('clientWebhookUrl');
     const apiUrlInput = document.getElementById('apiUrl');
+    const customerIdInput = document.getElementById('customerId');
     const messageInput = document.getElementById('messageInput');
     const sendButton = document.getElementById('sendButton');
     const messagesContainer = document.getElementById('messagesContainer');
@@ -18,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pingButton = document.getElementById('pingButton');
 
     // Application state
-    let customerId = generateRandomId(); // Generate a unique customer ID
+    let customerId = ''; // Will be loaded from config, no longer random
     let activeLogTab = 'sent'; // Default to sent tab
     let isConnected = false;
     let activeChatSession = true;
@@ -51,6 +52,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (savedConfig.connectionId) connectionIdInput.value = savedConfig.connectionId;
             if (savedConfig.jwtSecret) jwtSecretInput.value = savedConfig.jwtSecret;
             if (savedConfig.apiUrl) apiUrlInput.value = savedConfig.apiUrl;
+            if (savedConfig.customerId) {
+                customerIdInput.value = savedConfig.customerId;
+                customerId = savedConfig.customerId; // Set the global customerId
+            } else {
+                // Generate a default customer ID if none exists
+                const defaultCustomerId = generateRandomId();
+                customerIdInput.value = defaultCustomerId;
+                customerId = defaultCustomerId;
+            }
             
             // Always set the webhook URL based on the current origin
             const deployedUrl = window.location.origin; // e.g., https://your-app.onrender.com
@@ -187,11 +197,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const deployedUrl = window.location.origin; // e.g., https://your-app.onrender.com
         const webhookUrl = `${deployedUrl}/api/dms/webhook`;
         
+        // Update the global customerId with the input value
+        customerId = customerIdInput.value.trim();
+        if (!customerId) {
+            // If no customer ID is provided, generate one
+            customerId = generateRandomId();
+            customerIdInput.value = customerId;
+        }
+        
         const config = {
             connectionId: connectionIdInput.value.trim(),
             jwtSecret: jwtSecretInput.value.trim(),
             clientWebhookUrl: webhookUrl, // Always use the auto-generated URL
-            apiUrl: apiUrlInput.value.trim()
+            apiUrl: apiUrlInput.value.trim(),
+            customerId: customerId // Save the customer ID
         };
         
         // Save to localStorage
