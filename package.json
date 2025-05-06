@@ -8,7 +8,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "dms-client-channel": "latest",
+    "dms-client-channel": "2.0.2",
     "express": "^4.18.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -18,7 +18,7 @@
     "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": "18.x"
   },
   "repository": {
     "type": "git",
