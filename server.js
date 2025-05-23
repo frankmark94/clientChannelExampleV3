@@ -40,6 +40,9 @@ dms.onTextMessage = async (message) => {
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
+  
+  // Store incoming messages to be fetched by clients
+  storeIncomingMessage(message);
 };
 
 dms.onRichContentMessage = async (message) => {
@@ -49,6 +52,9 @@ dms.onRichContentMessage = async (message) => {
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
+  
+  // Store incoming messages to be fetched by clients
+  storeIncomingMessage(message);
 };
 
 dms.onUrlLinkMessage = async (message) => {
@@ -58,6 +64,9 @@ dms.onUrlLinkMessage = async (message) => {
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
+  
+  // Store incoming messages to be fetched by clients
+  storeIncomingMessage(message);
 };
 
 dms.onTypingIndicator = async (customerId) => {
@@ -90,6 +99,9 @@ dms.onMenuMessage = async (message) => {
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
+  
+  // Store incoming messages to be fetched by clients
+  storeIncomingMessage(message);
 };
 
 // Create a messages map to track sent messages for delivery confirmation
