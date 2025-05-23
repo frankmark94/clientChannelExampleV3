@@ -171,13 +171,32 @@ function storeIncomingMessage(message) {
 
   // CRITICAL: For messages from Pega with a customer.id field, add customer_id
   if (message.customer && message.customer.id && !message.customer_id) {
+    // Handle the specific UUID mapping for TestClient
     if (message.customer.id === '4cf33b5e963c45eb90cc2b99892844fc') {
       message.customer_id = 'TestClient';
       console.log(`Mapped Pega customer UUID to TestClient`);
-    } else {
+    }
+    // Handle the new UUID from the working logs - map to "Test"
+    else if (message.customer.id === '4505811de7cf4ac6b310a8109ab11869') {
+      message.customer_id = 'Test';
+      console.log(`Mapped Pega customer UUID to Test`);
+    }
+    else {
       message.customer_id = message.customer.id;
       console.log(`Used customer UUID as customer_id: ${message.customer.id}`);
     }
+  }
+  
+  // CRITICAL: Handle profile_id mapping - this is the most important one!
+  if (message.customer && message.customer.profile_id && !message.customer_id) {
+    message.customer_id = message.customer.profile_id;
+    console.log(`Mapped customer profile_id to customer_id: ${message.customer.profile_id}`);
+  }
+  
+  // CRITICAL: If we still don't have customer_id but have profile_id, use it as backup
+  if (!message.customer_id && message.customer && message.customer.profile_id) {
+    message.customer_id = message.customer.profile_id;
+    console.log(`Using profile_id as fallback customer_id: ${message.customer.profile_id}`);
   }
   
   // Add the message to our store
