@@ -178,6 +178,26 @@ app.post('/api/messages', (req, res) => {
     return res.status(400).json({ error: 'Missing required fields: customerId and messageId' });
   }
   
+  // Check if we have valid DMS configuration
+  const hasValidConfig = !!(DMS_CONFIG.JWT_SECRET && DMS_CONFIG.JWT_SECRET.trim() && 
+                           DMS_CONFIG.CHANNEL_ID && DMS_CONFIG.CHANNEL_ID.trim() && 
+                           DMS_CONFIG.API_URL && DMS_CONFIG.API_URL.trim());
+  
+  if (!hasValidConfig) {
+    const missingFields = [];
+    if (!DMS_CONFIG.JWT_SECRET || !DMS_CONFIG.JWT_SECRET.trim()) missingFields.push('JWT_SECRET');
+    if (!DMS_CONFIG.CHANNEL_ID || !DMS_CONFIG.CHANNEL_ID.trim()) missingFields.push('CHANNEL_ID');
+    if (!DMS_CONFIG.API_URL || !DMS_CONFIG.API_URL.trim()) missingFields.push('API_URL');
+    
+    console.error('Cannot send message - missing DMS configuration:', missingFields);
+    return res.status(500).json({ 
+      error: 'DMS not configured', 
+      message: `Missing configuration: ${missingFields.join(', ')}`,
+      status: 500,
+      messageStatus: 'error'
+    });
+  }
+  
   let messageObject;
   
   // Check if this is an advanced payload request
@@ -210,31 +230,54 @@ app.post('/api/messages', (req, res) => {
     };
   }
   
-  console.log('Sending message to DMS:', JSON.stringify(messageObject, null, 2));
+  console.log('Sending message to DMS with config:', {
+    API_URL: DMS_CONFIG.API_URL,
+    CHANNEL_ID: DMS_CONFIG.CHANNEL_ID,
+    messageObject: messageObject
+  });
   
   // Use sendMessage to send the payload to DMS
-  dms.sendMessage(messageObject, (response) => {
-    // Check if the request was successful (HTTP 2xx)
-    const isSuccessful = response.status >= 200 && response.status < 300;
-    
-    console.log('DMS Response:', response.status, response.statusText, response.data);
-    
-    // If the response is successful, mark the message as delivered immediately
-    // since we know DMS received it (200 OK response)
-    if (isSuccessful && messageObject.message_id) {
-      console.log(`Message ${messageObject.message_id} successfully delivered to DMS, marking as delivered`);
-      pendingMessages.set(messageObject.message_id, 'delivered');
-    }
-    
-    return res.status(response.status).json({
-      status: response.status,
-      message: response.statusText,
-      messageStatus: isSuccessful ? 'delivered' : 'error', // Change from 'sent' to 'delivered'
+  try {
+    dms.sendMessage(messageObject, (response) => {
+      console.log('DMS Response received:', {
+        status: response ? response.status : 'NO_STATUS',
+        statusText: response ? response.statusText : 'NO_STATUS_TEXT',
+        data: response ? response.data : 'NO_DATA',
+        fullResponse: response
+      });
+      
+      // Check if the request was successful (HTTP 2xx)
+      const isSuccessful = response && response.status >= 200 && response.status < 300;
+      
+      // If the response is successful, mark the message as delivered immediately
+      // since we know DMS received it (200 OK response)
+      if (isSuccessful && messageObject.message_id) {
+        console.log(`✅ Message ${messageObject.message_id} successfully delivered to DMS, marking as delivered`);
+        pendingMessages.set(messageObject.message_id, 'delivered');
+      } else {
+        console.error(`❌ Message ${messageObject.message_id} failed to send to DMS:`, response);
+      }
+      
+      return res.status(response ? response.status : 500).json({
+        status: response ? response.status : 500,
+        message: response ? response.statusText : 'No response from DMS',
+        messageStatus: isSuccessful ? 'delivered' : 'error',
+        messageId: messageObject.message_id || messageId,
+        messageType: messageObject.type,
+        dmsResponse: response // Include the DMS response data for client visibility
+      });
+    });
+  } catch (error) {
+    console.error('❌ Error sending message to DMS:', error);
+    return res.status(500).json({
+      status: 500,
+      message: 'Error sending message: ' + error.message,
+      messageStatus: 'error',
       messageId: messageObject.message_id || messageId,
       messageType: messageObject.type,
-      dmsResponse: response.data // Include the DMS response data for client visibility
+      error_details: error.toString()
     });
-  });
+  }
 });
 
 // New endpoint to update message status
@@ -448,11 +491,21 @@ app.post('/api/dms/webhook', (req, res) => {
 
 // NEW ENDPOINT: API endpoint to ping DMS and check real connection
 app.get('/api/ping', (req, res) => {
-  // Check if we have the necessary configuration values
-  if (!DMS_CONFIG.JWT_SECRET || !DMS_CONFIG.CHANNEL_ID || !DMS_CONFIG.API_URL) {
+  // Check if we have the necessary configuration values AND they're not empty
+  const hasValidConfig = !!(DMS_CONFIG.JWT_SECRET && DMS_CONFIG.JWT_SECRET.trim() && 
+                           DMS_CONFIG.CHANNEL_ID && DMS_CONFIG.CHANNEL_ID.trim() && 
+                           DMS_CONFIG.API_URL && DMS_CONFIG.API_URL.trim());
+  
+  if (!hasValidConfig) {
+    const missingFields = [];
+    if (!DMS_CONFIG.JWT_SECRET || !DMS_CONFIG.JWT_SECRET.trim()) missingFields.push('JWT_SECRET');
+    if (!DMS_CONFIG.CHANNEL_ID || !DMS_CONFIG.CHANNEL_ID.trim()) missingFields.push('CHANNEL_ID');
+    if (!DMS_CONFIG.API_URL || !DMS_CONFIG.API_URL.trim()) missingFields.push('API_URL');
+    
     return res.json({ 
       connected: false, 
-      message: 'Missing configuration values'
+      message: `Missing or empty configuration values: ${missingFields.join(', ')}`,
+      missing_fields: missingFields
     });
   }
   
@@ -464,27 +517,53 @@ app.get('/api/ping', (req, res) => {
     text: ['ping test message']
   };
   
+  console.log('Attempting to ping DMS with config:', {
+    API_URL: DMS_CONFIG.API_URL,
+    CHANNEL_ID: DMS_CONFIG.CHANNEL_ID,
+    JWT_SECRET: DMS_CONFIG.JWT_SECRET ? '****' : 'NOT SET'
+  });
 
   // Attempt to send a ping message to DMS
-  dms.sendMessage(pingMessage, (response) => {
-    console.log('DMS Ping response:', response);
-    
-    // Check if the connection was successful
-    const isConnected = response.status >= 200 && response.status < 300;
-    
-    return res.json({
-      connected: isConnected,
-      status: response.status,
-      message: response.statusText || (isConnected ? 'Connection successful' : 'Connection failed: ' + (response.data || 'Unknown error'))
+  try {
+    dms.sendMessage(pingMessage, (response) => {
+      console.log('DMS Ping response:', response);
+      
+      // Check if the connection was successful
+      const isConnected = response && response.status >= 200 && response.status < 300;
+      
+      return res.json({
+        connected: isConnected,
+        status: response ? response.status : 'NO_RESPONSE',
+        message: response ? (response.statusText || (isConnected ? 'Connection successful' : 'Connection failed: ' + (response.data || 'Unknown error'))) : 'No response from DMS client',
+        dms_response: response
+      });
     });
-  });
+  } catch (error) {
+    console.error('Error in DMS ping:', error);
+    return res.json({
+      connected: false,
+      status: 'ERROR',
+      message: 'Error sending ping: ' + error.message,
+      error_details: error.toString()
+    });
+  }
 });
 
 // API endpoint to get configuration
 app.get('/api/config', (req, res) => {
+  // Check if config values exist AND are not empty strings
+  const hasValidConfig = !!(DMS_CONFIG.JWT_SECRET && DMS_CONFIG.JWT_SECRET.trim() && 
+                           DMS_CONFIG.CHANNEL_ID && DMS_CONFIG.CHANNEL_ID.trim() && 
+                           DMS_CONFIG.API_URL && DMS_CONFIG.API_URL.trim());
+  
   res.json({
     // Only send what the client needs to know
-    connected: !!DMS_CONFIG.JWT_SECRET && !!DMS_CONFIG.CHANNEL_ID && !!DMS_CONFIG.API_URL
+    connected: hasValidConfig,
+    config_status: {
+      has_jwt_secret: !!(DMS_CONFIG.JWT_SECRET && DMS_CONFIG.JWT_SECRET.trim()),
+      has_channel_id: !!(DMS_CONFIG.CHANNEL_ID && DMS_CONFIG.CHANNEL_ID.trim()),
+      has_api_url: !!(DMS_CONFIG.API_URL && DMS_CONFIG.API_URL.trim())
+    }
   });
 });
 
