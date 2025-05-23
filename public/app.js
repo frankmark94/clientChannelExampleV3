@@ -25,6 +25,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeChatSession = true;
     const MESSAGE_TIMEOUT = 10000; // 10 seconds timeout for messages
     const pendingMessages = new Map(); // Track messages waiting for response
+    
+    // ADD: Frontend message deduplication tracking
+    const processedMessageIds = new Set();
+    const displayedMessageIds = new Set();
 
     // Initialize the application
     init();
@@ -471,7 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function checkForNewMessages() {
         if (!isConnected || !activeChatSession) return;
         
-        // Track when we last checked for messages
+        // Track when we last checked for messages with more precision
         if (!window.lastMessageCheck) {
             window.lastMessageCheck = new Date(0).toISOString(); // Start from beginning of time
         }
@@ -481,16 +485,22 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(response => response.json())
             .then(data => {
                 if (data.messages && data.messages.length > 0) {
-                    console.log(`Received ${data.messages.length} new messages from DMS`);
+                    console.log(`📨 Received ${data.messages.length} new messages from server`);
                     
-                    // Update the last check time to the most recent message
-                    const timestamps = data.messages.map(msg => msg.timestamp);
-                    window.lastMessageCheck = new Date(Math.max(...timestamps.map(t => new Date(t).getTime()))).toISOString();
+                    // Enhanced timestamp updating - add a small buffer to prevent re-fetching the same messages
+                    const timestamps = data.messages.map(msg => new Date(msg.timestamp).getTime());
+                    const latestTimestamp = Math.max(...timestamps);
+                    // Add 1 millisecond to ensure we don't fetch the same message again
+                    window.lastMessageCheck = new Date(latestTimestamp + 1).toISOString();
+                    
+                    console.log(`📅 Updated lastMessageCheck to: ${window.lastMessageCheck}`);
                     
                     // Process and display each message
                     data.messages.forEach(message => {
                         processIncomingMessage(message);
                     });
+                } else {
+                    console.log(`📭 No new messages found for customer ${customerId}`);
                 }
             })
             .catch(error => {
@@ -501,6 +511,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Process incoming message from DMS
     function processIncomingMessage(message) {
         console.log('Processing incoming message:', message);
+        
+        // CRITICAL FIX: Check for duplicate message IDs
+        if (message.message_id && processedMessageIds.has(message.message_id)) {
+            console.log(`🚫 Frontend: Duplicate message ID detected: ${message.message_id}. Skipping processing.`);
+            return;
+        }
+        
+        // Mark this message as processed
+        if (message.message_id) {
+            processedMessageIds.add(message.message_id);
+        }
         
         switch (message.type) {
             case 'text':
@@ -620,12 +641,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Add a message to the UI
     function addMessageToUI(message) {
+        // FINAL PROTECTION: Check if this message ID is already displayed
+        if (message.id && displayedMessageIds.has(message.id)) {
+            console.log(`🚫 UI: Message ${message.id} already displayed. Skipping duplicate.`);
+            return;
+        }
+        
         const messageElement = document.createElement('div');
         messageElement.classList.add('message');
         messageElement.classList.add(message.isUser ? 'user-message' : 'system-message');
         
         if (message.id) {
             messageElement.setAttribute('data-message-id', message.id);
+            // Track that we've displayed this message
+            displayedMessageIds.add(message.id);
         }
         
         // Different rendering based on message type

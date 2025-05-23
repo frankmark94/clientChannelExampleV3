@@ -40,9 +40,6 @@ dms.onTextMessage = async (message) => {
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
-  
-  // Store incoming messages to be fetched by clients
-  storeIncomingMessage(message);
 };
 
 dms.onRichContentMessage = async (message) => {
@@ -52,9 +49,6 @@ dms.onRichContentMessage = async (message) => {
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
-  
-  // Store incoming messages to be fetched by clients
-  storeIncomingMessage(message);
 };
 
 dms.onUrlLinkMessage = async (message) => {
@@ -64,9 +58,6 @@ dms.onUrlLinkMessage = async (message) => {
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
-  
-  // Store incoming messages to be fetched by clients
-  storeIncomingMessage(message);
 };
 
 dms.onTypingIndicator = async (customerId) => {
@@ -99,9 +90,6 @@ dms.onMenuMessage = async (message) => {
   if (message && message.message_id) {
     pendingMessages.set(message.message_id, 'delivered');
   }
-  
-  // Store incoming messages to be fetched by clients
-  storeIncomingMessage(message);
 };
 
 // Create a messages map to track sent messages for delivery confirmation
@@ -110,8 +98,18 @@ const pendingMessages = new Map();
 // Create a store for incoming messages to be polled by clients
 const incomingMessages = [];
 
+// ADD: Message deduplication tracking
+const processedMessageIds = new Set();
+const messageIdToStoredIndex = new Map(); // Track where messages are stored for updates
+
 // Helper function to store incoming messages
 function storeIncomingMessage(message) {
+  // CRITICAL FIX: Check for duplicate message IDs first
+  if (message.message_id && processedMessageIds.has(message.message_id)) {
+    console.log(`🚫 Duplicate message detected: ${message.message_id}. Skipping storage.`);
+    return false; // Indicate message was not stored
+  }
+
   // Add timestamp if not present
   if (!message.timestamp) {
     message.timestamp = new Date().toISOString();
@@ -156,11 +154,20 @@ function storeIncomingMessage(message) {
   }
   
   // Add the message to our store
+  const messageIndex = incomingMessages.length;
   incomingMessages.push(message);
   
-  console.log(`Stored incoming message for customer: ${message.customer_id}`);
+  // Track this message ID as processed
+  if (message.message_id) {
+    processedMessageIds.add(message.message_id);
+    messageIdToStoredIndex.set(message.message_id, messageIndex);
+  }
+  
+  console.log(`✅ Stored NEW message for customer: ${message.customer_id}`);
   console.log(`Message content: ${JSON.stringify(message.text || message.pyEntryText || 'No text')}`);
   console.log(`Total stored messages: ${incomingMessages.length}`);
+  
+  return true; // Indicate message was stored successfully
 }
 
 // API endpoint to send messages
@@ -269,9 +276,13 @@ app.post('/api/dms/webhook', (req, res) => {
       if (hasCustomerId || hasCustomer) {
         console.log(`✅ [${requestId}] Valid customer identification found, processing directly`);
         
-        // Store the message in our internal store
+        // Store the message in our internal store (now with deduplication)
         console.log(`📦 [${requestId}] Storing message in local queue`);
-        storeIncomingMessage(req.body);
+        const wasStored = storeIncomingMessage(req.body);
+        
+        if (!wasStored) {
+          console.log(`⚠️ [${requestId}] Message was not stored (likely duplicate)`);
+        }
         
         // Process message based on type if we have handlers
         if (messageType !== 'unknown') {
@@ -369,7 +380,10 @@ app.post('/api/dms/webhook', (req, res) => {
             (req.body.customer && req.body.customer.id) || 
             (req.body.customer && req.body.customer.profile_id))) {
           console.log(`🆘 [${requestId}] Storing message despite validation timeout/error`);
-          storeIncomingMessage(req.body);
+          const wasStored = storeIncomingMessage(req.body);
+          if (!wasStored) {
+            console.log(`⚠️ [${requestId}] Message was not stored (likely duplicate)`);
+          }
           console.log(`📤 [${requestId}] Responding with success status despite timeout`);
           console.log(`✨ [${requestId}] ========== WEBHOOK PROCESSING COMPLETE ==========\n`);
           return res.status(200).send('Message accepted despite validation timeout');
@@ -389,8 +403,12 @@ app.post('/api/dms/webhook', (req, res) => {
         (req.body.customer && req.body.customer.profile_id))) {
       console.log(`🆘 [${requestId}] Attempting to store message despite error`);
       try {
-        storeIncomingMessage(req.body);
-        console.log(`✅ [${requestId}] Successfully stored message despite error`);
+        const wasStored = storeIncomingMessage(req.body);
+        if (wasStored) {
+          console.log(`✅ [${requestId}] Successfully stored message despite error`);
+        } else {
+          console.log(`⚠️ [${requestId}] Message was not stored (likely duplicate)`);
+        }
       } catch (storeErr) {
         console.error(`💥 [${requestId}] Failed to store message:`, storeErr);
       }
@@ -564,7 +582,24 @@ app.get('/api/debug/messages', (req, res) => {
   // Return all messages regardless of customer ID
   res.json({
     count: incomingMessages.length,
-    messages: incomingMessages
+    messages: incomingMessages,
+    processedMessageIds: Array.from(processedMessageIds),
+    processedCount: processedMessageIds.size
+  });
+});
+
+// NEW DEBUG Endpoint: Check deduplication status
+app.get('/api/debug/deduplication', (req, res) => {
+  res.json({
+    totalStoredMessages: incomingMessages.length,
+    uniqueMessageIds: processedMessageIds.size,
+    duplicatesBlocked: Math.max(0, incomingMessages.length - processedMessageIds.size),
+    recentMessages: incomingMessages.slice(-10).map(msg => ({
+      message_id: msg.message_id,
+      type: msg.type,
+      timestamp: msg.timestamp,
+      customer_id: msg.customer_id
+    }))
   });
 });
 
