@@ -104,10 +104,25 @@ const messageIdToStoredIndex = new Map(); // Track where messages are stored for
 
 // Helper function to store incoming messages
 function storeIncomingMessage(message) {
-  // CRITICAL FIX: Check for duplicate message IDs first
+  // CRITICAL FIX: Only check for duplicates on messages with the same customer_id AND type
+  // Don't block DMS responses which are legitimate new messages
   if (message.message_id && processedMessageIds.has(message.message_id)) {
-    console.log(`🚫 Duplicate message detected: ${message.message_id}. Skipping storage.`);
-    return false; // Indicate message was not stored
+    // Allow DMS responses even if they have the same message_id as our outgoing messages
+    // Only block true duplicates (same message_id AND same direction/source)
+    const existingMessageIndex = messageIdToStoredIndex.get(message.message_id);
+    if (existingMessageIndex !== undefined) {
+      const existingMessage = incomingMessages[existingMessageIndex];
+      // Only block if it's truly the same message (same content and source)
+      if (existingMessage && 
+          existingMessage.text === message.text && 
+          existingMessage.type === message.type &&
+          existingMessage.customer_id === message.customer_id) {
+        console.log(`🚫 True duplicate detected: ${message.message_id}. Skipping storage.`);
+        return false;
+      }
+    }
+    // If we get here, it's probably a DMS response with the same ID but different content
+    console.log(`✅ Allowing message with existing ID (likely DMS response): ${message.message_id}`);
   }
 
   // Add timestamp if not present
@@ -157,7 +172,7 @@ function storeIncomingMessage(message) {
   const messageIndex = incomingMessages.length;
   incomingMessages.push(message);
   
-  // Track this message ID as processed
+  // Track this message ID as processed (but allow DMS responses)
   if (message.message_id) {
     processedMessageIds.add(message.message_id);
     messageIdToStoredIndex.set(message.message_id, messageIndex);
@@ -274,163 +289,50 @@ app.post('/api/dms/webhook', (req, res) => {
   console.log(`\n🔔 [${requestId}] ========== WEBHOOK REQUEST RECEIVED: ${new Date().toISOString()} ==========`);
   
   try {
-    // Log detailed request information
-    console.log(`🔍 [${requestId}] Request IP: ${req.ip}`);
-    console.log(`🔍 [${requestId}] Request method: ${req.method}`);
-    console.log(`🔍 [${requestId}] Content-Type: ${req.headers['content-type']}`);
-    console.log(`🔍 [${requestId}] User-Agent: ${req.headers['user-agent']}`);
-    console.log(`🔍 [${requestId}] Request headers:`, JSON.stringify(req.headers, null, 2));
-    
     // Log the incoming webhook payload
     console.log(`📥 [${requestId}] Received payload:`, JSON.stringify(req.body, null, 2));
     
-    // ENHANCED BYPASS: Accept all webhook messages with essential fields
-    // This ensures messages are processed even when DMS server is unreachable
+    // PRIORITY: Store all incoming messages first
     if (req.body) {
-      console.log(`🧐 [${requestId}] Analyzing payload contents...`);
+      console.log(`📦 [${requestId}] Storing incoming message`);
+      const wasStored = storeIncomingMessage(req.body);
       
-      // Process message if it has any customer identification
-      const hasCustomerId = !!req.body.customer_id;
-      const hasCustomer = !!(req.body.customer && (req.body.customer.id || req.body.customer.profile_id));
-      const messageType = req.body.type || 'unknown';
-      
-      console.log(`ℹ️ [${requestId}] Message info: type=${messageType}, hasCustomerId=${hasCustomerId}, hasCustomer=${hasCustomer}`);
-      
-      if (hasCustomerId || hasCustomer) {
-        console.log(`✅ [${requestId}] Valid customer identification found, processing directly`);
-        
-        // Store the message in our internal store (now with deduplication)
-        console.log(`📦 [${requestId}] Storing message in local queue`);
-        const wasStored = storeIncomingMessage(req.body);
-        
-        if (!wasStored) {
-          console.log(`⚠️ [${requestId}] Message was not stored (likely duplicate)`);
-        }
-        
-        // Process message based on type if we have handlers
-        if (messageType !== 'unknown') {
-          console.log(`🔄 [${requestId}] Routing message to handler for type: ${messageType}`);
-          
-          if (messageType === 'text' && dms.onTextMessage) {
-            try { 
-              dms.onTextMessage(req.body); 
-              console.log(`📝 [${requestId}] Text message processed successfully`);
-            } catch (e) { 
-              console.error(`❌ [${requestId}] Error in text handler:`, e); 
-            }
-          } else if (messageType === 'rich_content' && dms.onRichContentMessage) {
-            try { 
-              dms.onRichContentMessage(req.body); 
-              console.log(`📊 [${requestId}] Rich content message processed successfully`);
-            } catch (e) { 
-              console.error(`❌ [${requestId}] Error in rich content handler:`, e); 
-            }
-          } else if (messageType === 'link_button' && dms.onUrlLinkMessage) {
-            try { 
-              dms.onUrlLinkMessage(req.body); 
-              console.log(`🔗 [${requestId}] URL link message processed successfully`);
-            } catch (e) { 
-              console.error(`❌ [${requestId}] Error in URL link handler:`, e); 
-            }
-          } else if (messageType === 'menu' && dms.onMenuMessage) {
-            try { 
-              dms.onMenuMessage(req.body); 
-              console.log(`📋 [${requestId}] Menu message processed successfully`);
-            } catch (e) { 
-              console.error(`❌ [${requestId}] Error in menu handler:`, e); 
-            }
-          } else {
-            console.log(`⚠️ [${requestId}] No handler available for message type: ${messageType}`);
-          }
-        } else {
-          console.log(`⚠️ [${requestId}] Unknown message type, storing only`);
-        }
-        
-        // If this is a delivery confirmation, update message status
-        if (req.body.message_id) {
-          console.log(`✓ [${requestId}] Updating status for message ${req.body.message_id} to 'delivered'`);
-          pendingMessages.set(req.body.message_id, 'delivered');
-        }
-        
-        // Respond immediately with success to ensure DMS knows we got it
-        console.log(`📤 [${requestId}] Sending immediate success response`);
-        console.log(`✨ [${requestId}] ========== WEBHOOK PROCESSING COMPLETE ==========\n`);
-        return res.status(200).send('Message processed successfully');
+      if (wasStored) {
+        console.log(`✅ [${requestId}] Message stored successfully`);
       } else {
-        console.log(`⚠️ [${requestId}] Message lacks customer identification, attempting validation`);
+        console.log(`⚠️ [${requestId}] Message was not stored (likely duplicate)`);
       }
-    } else {
-      console.log(`⚠️ [${requestId}] Empty request body received`);
+      
+      // If this is a delivery confirmation, update message status
+      if (req.body.message_id) {
+        console.log(`✓ [${requestId}] Updating status for message ${req.body.message_id} to 'delivered'`);
+        pendingMessages.set(req.body.message_id, 'delivered');
+      }
+      
+      // Always respond with success to ensure DMS knows we got it
+      console.log(`📤 [${requestId}] Sending success response`);
+      console.log(`✨ [${requestId}] ========== WEBHOOK PROCESSING COMPLETE ==========\n`);
+      return res.status(200).send('Message processed successfully');
     }
     
-    // Set a timeout for the DMS validation request
-    const timeoutMs = 5000; // 5 seconds timeout
-    console.log(`⏱️ [${requestId}] Setting ${timeoutMs}ms timeout for DMS validation`);
-    
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('DMS validation timed out')), timeoutMs);
+    // If no body, still try to process with DMS client
+    console.log(`🔐 [${requestId}] No body, attempting DMS client processing`);
+    dms.onRequest(req, (status, message) => {
+      console.log(`🔐 [${requestId}] DMS client returned: status=${status}, message=${message}`);
+      console.log(`✨ [${requestId}] ========== WEBHOOK PROCESSING COMPLETE ==========\n`);
+      return res.status(status).send(message);
     });
-    
-    // Wrap the DMS processing in a promise
-    console.log(`🔐 [${requestId}] Attempting DMS validation via onRequest`);
-    const dmsProcessPromise = new Promise((resolve) => {
-      try {
-        dms.onRequest(req, (status, message) => {
-          console.log(`🔐 [${requestId}] DMS validation returned: status=${status}, message=${message}`);
-          resolve({ status, message });
-        });
-      } catch (error) {
-        console.error(`❌ [${requestId}] Immediate error in DMS validation:`, error);
-        resolve({ status: 500, message: error.message });
-      }
-    });
-    
-    // Race the DMS processing against the timeout
-    console.log(`⏱️ [${requestId}] Waiting for DMS validation (with timeout)`);
-    Promise.race([dmsProcessPromise, timeoutPromise])
-      .then(({ status, message }) => {
-        // Success path - DMS responded in time
-        console.log(`✅ [${requestId}] DMS validation completed in time: status=${status}`);
-        console.log(`📤 [${requestId}] Responding with status ${status}`);
-        console.log(`✨ [${requestId}] ========== WEBHOOK PROCESSING COMPLETE ==========\n`);
-        return res.status(status).send(message);
-      })
-      .catch(error => {
-        console.error(`⏱️ [${requestId}] Error or timeout in DMS validation:`, error);
-        
-        // If timeout or other error, still try to store the message
-        if (req.body && (req.body.customer_id || 
-            (req.body.customer && req.body.customer.id) || 
-            (req.body.customer && req.body.customer.profile_id))) {
-          console.log(`🆘 [${requestId}] Storing message despite validation timeout/error`);
-          const wasStored = storeIncomingMessage(req.body);
-          if (!wasStored) {
-            console.log(`⚠️ [${requestId}] Message was not stored (likely duplicate)`);
-          }
-          console.log(`📤 [${requestId}] Responding with success status despite timeout`);
-          console.log(`✨ [${requestId}] ========== WEBHOOK PROCESSING COMPLETE ==========\n`);
-          return res.status(200).send('Message accepted despite validation timeout');
-        }
-        
-        console.log(`⌛ [${requestId}] Returning timeout status (408)`);
-        console.log(`✨ [${requestId}] ========== WEBHOOK PROCESSING COMPLETE ==========\n`);
-        return res.status(408).send('Request to DMS timed out');
-      });
       
   } catch (err) {
-    console.error(`❌ [${requestId}] Unhandled error in webhook processing:`, err);
+    console.error(`❌ [${requestId}] Error in webhook processing:`, err);
     
-    // Even if there's an error, try to store the message if it has required fields
-    if (req.body && (req.body.customer_id || 
-        (req.body.customer && req.body.customer.id) || 
-        (req.body.customer && req.body.customer.profile_id))) {
+    // Even on error, try to store the message if it exists
+    if (req.body) {
       console.log(`🆘 [${requestId}] Attempting to store message despite error`);
       try {
         const wasStored = storeIncomingMessage(req.body);
         if (wasStored) {
           console.log(`✅ [${requestId}] Successfully stored message despite error`);
-        } else {
-          console.log(`⚠️ [${requestId}] Message was not stored (likely duplicate)`);
         }
       } catch (storeErr) {
         console.error(`💥 [${requestId}] Failed to store message:`, storeErr);
