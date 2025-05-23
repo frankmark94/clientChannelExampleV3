@@ -8,11 +8,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const customerIdInput = document.getElementById('customerId');
     const messageInput = document.getElementById('messageInput');
     const sendButton = document.getElementById('sendButton');
+    const sendAdvancedButton = document.getElementById('sendAdvancedButton');
+    const messageTypeSelect = document.getElementById('messageType');
     const messagesContainer = document.getElementById('messagesContainer');
     const logContent = document.getElementById('logContent');
     const logTabs = document.querySelectorAll('.log-tab');
     const endSessionButton = document.querySelector('.end-session');
     const simulateCsrButton = document.querySelector('.simulate-csr');
+    const clearChatButton = document.querySelector('.clear-chat');
     const typingCheckbox = document.getElementById('typingCheckbox');
     const statusDot = document.querySelector('.status-dot');
     const statusText = document.querySelector('.status-text');
@@ -43,6 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Setup event listeners
         setupEventListeners();
+        
+        // Update input placeholder based on default message type
+        updateInputPlaceholder();
         
         // Set up polling for messages (in a real app, you'd use WebSockets)
         setInterval(checkForNewMessages, 5000);
@@ -191,6 +197,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Send message on button click
         sendButton.addEventListener('click', sendMessage);
         
+        // Send advanced message on advanced button click
+        sendAdvancedButton.addEventListener('click', sendAdvancedMessage);
+        
         // Send message on Enter key
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -223,6 +232,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Simulate CSR response button
         simulateCsrButton.addEventListener('click', simulateCsrResponse);
         
+        // Clear chat button
+        clearChatButton.addEventListener('click', clearChatWindow);
+        
         // Typing indicator checkbox
         typingCheckbox.addEventListener('change', toggleTypingIndicator);
 
@@ -230,6 +242,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pingButton) {
             pingButton.addEventListener('click', pingDMS);
         }
+
+        // Message type selector change handler
+        messageTypeSelect.addEventListener('change', function() {
+            updateInputPlaceholder();
+        });
     }
 
     // Save configuration to server and localStorage
@@ -875,5 +892,226 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper function to generate a random ID
     function generateRandomId() {
         return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    }
+
+    // Clear the chat window
+    function clearChatWindow() {
+        // Clear the messages container
+        messagesContainer.innerHTML = '<div class="chat-status">Chat session started. Send a message to begin.</div>';
+        
+        // Reset tracking variables
+        processedMessageIds.clear();
+        displayedMessageIds.clear();
+        
+        // Clear console log
+        logContent.innerHTML = '';
+        
+        // Reset last message check timestamp
+        window.lastMessageCheck = new Date(0).toISOString();
+        
+        // Show status message
+        showStatus('Chat window cleared successfully');
+        
+        console.log('🧹 Chat window cleared - All messages and tracking data reset');
+    }
+
+    // Send advanced message with different payload types
+    function sendAdvancedMessage() {
+        if (!isConnected || !activeChatSession) return;
+        
+        // Make sure we have a customerId before sending
+        if (!customerId) {
+            showError('Please set a Customer ID in the configuration panel and save config');
+            if (customerIdInput) {
+                customerIdInput.classList.add('highlight-required');
+                customerIdInput.scrollIntoView({ behavior: 'smooth' });
+            }
+            return;
+        }
+        
+        const messageType = messageTypeSelect.value;
+        const text = messageInput.value.trim();
+        const messageId = generateRandomId();
+        const timestamp = new Date().toISOString();
+        
+        let payload = {};
+        let displayText = '';
+        
+        // Build payload based on selected message type
+        switch (messageType) {
+            case 'text':
+                if (!text) {
+                    showError('Please enter a message text');
+                    return;
+                }
+                payload = {
+                    type: 'text',
+                    customer_id: customerId,
+                    customer_name: 'Test Customer',
+                    message_id: messageId,
+                    text: [text]
+                };
+                displayText = text;
+                break;
+                
+            case 'text_with_attachment':
+                if (!text) {
+                    showError('Please enter a message text');
+                    return;
+                }
+                payload = {
+                    type: 'text',
+                    customer_id: customerId,
+                    customer_name: 'Test Customer',
+                    message_id: messageId,
+                    text: [text],
+                    attachments: [
+                        {
+                            url: 'https://example.com/sample-document.pdf'
+                        }
+                    ]
+                };
+                displayText = `${text} (with attachment: sample-document.pdf)`;
+                break;
+                
+            case 'text_with_context':
+                if (!text) {
+                    showError('Please enter a message text');
+                    return;
+                }
+                payload = {
+                    type: 'text',
+                    customer_id: customerId,
+                    customer_name: 'Test Customer',
+                    message_id: messageId,
+                    text: [text],
+                    context_data: {
+                        source: 'web_client',
+                        session_id: generateRandomId(),
+                        user_agent: navigator.userAgent
+                    }
+                };
+                displayText = `${text} (with context data)`;
+                break;
+                
+            case 'menu_postback':
+                if (!text) {
+                    showError('Please enter a postback value (e.g., "option_1", "billing_help")');
+                    return;
+                }
+                payload = {
+                    type: 'text',
+                    customer_id: customerId,
+                    customer_name: 'Test Customer',
+                    message_id: messageId,
+                    postback: text
+                };
+                displayText = `Menu selection: ${text}`;
+                break;
+                
+            case 'typing_indicator':
+                payload = {
+                    type: 'typing_indicator',
+                    customer_id: customerId
+                };
+                displayText = 'Typing indicator sent';
+                break;
+                
+            case 'customer_end_session':
+                payload = {
+                    type: 'customer_end_session',
+                    customer_id: customerId
+                };
+                displayText = 'Customer ended session';
+                break;
+                
+            default:
+                showError('Unknown message type selected');
+                return;
+        }
+        
+        console.log(`Sending ${messageType} payload:`, JSON.stringify(payload, null, 2));
+        
+        // Add message to UI immediately (optimistic UI update) - except for typing indicator
+        if (messageType !== 'typing_indicator') {
+            addMessageToUI({
+                id: messageId,
+                text: displayText,
+                isUser: true,
+                timestamp,
+                status: 'sending'
+            });
+        }
+        
+        // Clear input field
+        messageInput.value = '';
+        
+        // Send to server using the same endpoint but with advanced payload
+        fetch('/api/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                customerId: payload.customer_id,
+                messageId: payload.message_id || messageId,
+                text: payload.text || [displayText],
+                customerName: payload.customer_name || 'Test Customer',
+                // Include the full payload for advanced processing
+                advancedPayload: payload
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log(`Server response for ${messageType} message:`, data);
+            
+            if (messageType !== 'typing_indicator') {
+                // Update message status based on server response
+                updateMessageStatus(messageId, data.messageStatus || (data.status === 200 ? 'sent' : 'error'));
+            }
+            
+            if (data.status !== 200) {
+                showError(`Error sending ${messageType} message: ${data.message}`);
+            } else {
+                // Log the sent message
+                addToConsoleLog({
+                    direction: 'sent',
+                    message: payload
+                });
+                
+                showStatus(`${messageType.replace('_', ' ')} sent successfully!`);
+            }
+        })
+        .catch(error => {
+            console.error(`Error sending ${messageType} message:`, error);
+            if (messageType !== 'typing_indicator') {
+                updateMessageStatus(messageId, 'error');
+            }
+            showError(`Error sending ${messageType} message: ` + error.message);
+        });
+    }
+
+    // Update input placeholder based on message type
+    function updateInputPlaceholder() {
+        const messageType = messageTypeSelect.value;
+        const placeholders = {
+            'text': 'Type your message here...',
+            'text_with_attachment': 'Type your message here (attachment will be added automatically)...',
+            'text_with_context': 'Type your message here (context data will be added automatically)...',
+            'menu_postback': 'Enter postback value (e.g., "option_1", "billing_help")...',
+            'typing_indicator': 'No text needed - just click the advanced send button',
+            'customer_end_session': 'No text needed - just click the advanced send button'
+        };
+        
+        messageInput.placeholder = placeholders[messageType] || 'Type your message here...';
+        
+        // Disable input for certain message types
+        if (messageType === 'typing_indicator' || messageType === 'customer_end_session') {
+            messageInput.disabled = true;
+            messageInput.style.opacity = '0.6';
+        } else {
+            messageInput.disabled = false;
+            messageInput.style.opacity = '1';
+        }
     }
 }); 

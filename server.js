@@ -172,25 +172,47 @@ function storeIncomingMessage(message) {
 
 // API endpoint to send messages
 app.post('/api/messages', (req, res) => {
-  const { customerId, messageId, text, customerName } = req.body;
+  const { customerId, messageId, text, customerName, advancedPayload } = req.body;
   
-  if (!customerId || !messageId || !text) {
-    return res.status(400).json({ error: 'Missing required fields' });
+  if (!customerId || !messageId) {
+    return res.status(400).json({ error: 'Missing required fields: customerId and messageId' });
   }
   
-  // Create a message object identical to the format we use for ping
-  const messageObject = {
-    type: 'text',
-    customer_id: customerId,
-    message_id: messageId,
-    text: Array.isArray(text) ? text : [text],
-    customer_name: customerName || 'Customer',
-    timestamp: new Date().toISOString()
-  };
+  let messageObject;
+  
+  // Check if this is an advanced payload request
+  if (advancedPayload) {
+    console.log('Processing advanced payload:', JSON.stringify(advancedPayload, null, 2));
+    
+    // Use the advanced payload directly (it's already in the correct Pega format)
+    messageObject = advancedPayload;
+    
+    // Ensure required fields are present
+    if (!messageObject.customer_id) messageObject.customer_id = customerId;
+    if (!messageObject.message_id && messageObject.type !== 'typing_indicator' && messageObject.type !== 'customer_end_session') {
+      messageObject.message_id = messageId;
+    }
+    if (!messageObject.timestamp) messageObject.timestamp = new Date().toISOString();
+    
+  } else {
+    // Standard text message (backward compatibility)
+    if (!text) {
+      return res.status(400).json({ error: 'Missing required field: text' });
+    }
+    
+    messageObject = {
+      type: 'text',
+      customer_id: customerId,
+      message_id: messageId,
+      text: Array.isArray(text) ? text : [text],
+      customer_name: customerName || 'Customer',
+      timestamp: new Date().toISOString()
+    };
+  }
   
   console.log('Sending message to DMS:', JSON.stringify(messageObject, null, 2));
   
-  // Use sendMessage instead of sendTextMessage to ensure consistent format
+  // Use sendMessage to send the payload to DMS
   dms.sendMessage(messageObject, (response) => {
     // Check if the request was successful (HTTP 2xx)
     const isSuccessful = response.status >= 200 && response.status < 300;
@@ -199,16 +221,17 @@ app.post('/api/messages', (req, res) => {
     
     // If the response is successful, mark the message as delivered immediately
     // since we know DMS received it (200 OK response)
-    if (isSuccessful) {
-      console.log(`Message ${messageId} successfully delivered to DMS, marking as delivered`);
-      pendingMessages.set(messageId, 'delivered');
+    if (isSuccessful && messageObject.message_id) {
+      console.log(`Message ${messageObject.message_id} successfully delivered to DMS, marking as delivered`);
+      pendingMessages.set(messageObject.message_id, 'delivered');
     }
     
     return res.status(response.status).json({
       status: response.status,
       message: response.statusText,
       messageStatus: isSuccessful ? 'delivered' : 'error', // Change from 'sent' to 'delivered'
-      messageId: messageId,
+      messageId: messageObject.message_id || messageId,
+      messageType: messageObject.type,
       dmsResponse: response.data // Include the DMS response data for client visibility
     });
   });

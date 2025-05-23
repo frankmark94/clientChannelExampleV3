@@ -69,6 +69,9 @@
             <div class="chat-header">
                 <h2>Chat Session</h2>
                 <div class="chat-actions">
+                    <button class="btn clear-chat">
+                        <i class="fas fa-broom"></i> Clear Chat
+                    </button>
                     <button class="btn end-session">End Session</button>
                     <button class="btn simulate-csr">Simulate CSR Response</button>
                 </div>
@@ -80,10 +83,26 @@
             </div>
             
             <div class="input-container">
-                <input type="text" id="messageInput" placeholder="Type your message here...">
-                <button class="btn send-message" id="sendButton">
-                    <i class="fas fa-paper-plane"></i> Send
-                </button>
+                <div class="message-type-selector">
+                    <label for="messageType">Message Type:</label>
+                    <select id="messageType" class="message-type-dropdown">
+                        <option value="text">Text Message</option>
+                        <option value="text_with_attachment">Text + Attachment</option>
+                        <option value="text_with_context">Text + Context Data</option>
+                        <option value="menu_postback">Menu Selection (Postback)</option>
+                        <option value="typing_indicator">Typing Indicator</option>
+                        <option value="customer_end_session">End Session</option>
+                    </select>
+                </div>
+                <div class="input-row">
+                    <input type="text" id="messageInput" placeholder="Type your message here...">
+                    <button class="btn send-message" id="sendButton">
+                        <i class="fas fa-paper-plane"></i> Send
+                    </button>
+                    <button class="btn send-advanced" id="sendAdvancedButton" title="Send with selected message type">
+                        <i class="fas fa-cogs"></i>
+                    </button>
+                </div>
                 <div class="typing-indicator">
                     <label for="typingCheckbox">
                         <input type="checkbox" id="typingCheckbox"> Show Typing
