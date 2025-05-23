@@ -133,7 +133,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateConnectionStatus(null, 'Connecting...');
         
         fetch('/api/ping')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 isConnected = data.connected;
                 
@@ -152,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error pinging DMS:', error);
                 isConnected = false;
                 updateConnectionStatus();
-                showError('Error pinging DMS: ' + error.message);
+                showError('Error testing connection: ' + error.message);
             });
     }
 
@@ -381,7 +386,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 customerName: 'You'
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(data => {
             console.log(`Server response for message ${messageId}:`, data);
             
@@ -389,19 +399,25 @@ document.addEventListener('DOMContentLoaded', () => {
             if (pendingMessages.has(messageId)) {
                 clearTimeout(pendingMessages.get(messageId).timeoutId);
                 
-                // Set up status polling for this message if it was sent successfully
-                if (data.messageStatus === 'sent') {
-                    console.log(`Message ${messageId} sent successfully to DMS. Starting polling for delivery confirmation.`);
-                    // Start polling for status updates
-                    startStatusPolling(messageId);
+                // Check if message was successful (either 'sent', 'delivered', or status 200)
+                const isSuccessful = data.messageStatus === 'sent' || data.messageStatus === 'delivered' || data.status === 200;
+                
+                if (isSuccessful) {
+                    console.log(`Message ${messageId} sent successfully to DMS.`);
+                    // Don't start polling if already delivered
+                    if (data.messageStatus !== 'delivered') {
+                        startStatusPolling(messageId);
+                    }
                 } else {
                     console.error(`Failed to send message ${messageId} to DMS:`, data);
-                    pendingMessages.delete(messageId);
                 }
+                
+                // Always clean up pending message since we got a response
+                pendingMessages.delete(messageId);
             }
             
             // Update message status based on server response
-            updateMessageStatus(messageId, data.messageStatus || (data.status === 200 ? 'sent' : 'error'));
+            updateMessageStatus(messageId, data.messageStatus || (data.status === 200 ? 'delivered' : 'error'));
             
             if (data.status !== 200) {
                 showError(`Error sending message: ${data.message}`);
@@ -417,6 +433,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         timestamp
                     }
                 });
+                
+                // Show success message
+                if (data.messageStatus === 'delivered') {
+                    showStatus('Message delivered successfully!');
+                }
             }
         })
         .catch(error => {
@@ -1061,13 +1082,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 advancedPayload: payload
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(data => {
             console.log(`Server response for ${messageType} message:`, data);
             
             if (messageType !== 'typing_indicator') {
-                // Update message status based on server response
-                updateMessageStatus(messageId, data.messageStatus || (data.status === 200 ? 'sent' : 'error'));
+                // Update message status based on server response  
+                updateMessageStatus(messageId, data.messageStatus || (data.status === 200 ? 'delivered' : 'error'));
             }
             
             if (data.status !== 200) {
@@ -1079,7 +1105,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     message: payload
                 });
                 
-                showStatus(`${messageType.replace('_', ' ')} sent successfully!`);
+                // Show success message
+                const messageTypeName = messageType.replace('_', ' ');
+                if (data.messageStatus === 'delivered') {
+                    showStatus(`${messageTypeName} delivered successfully!`);
+                } else {
+                    showStatus(`${messageTypeName} sent successfully!`);
+                }
             }
         })
         .catch(error => {
