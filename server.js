@@ -258,8 +258,29 @@ app.post('/api/messages', (req, res) => {
   
   console.log('Sending message to DMS:', JSON.stringify(messageObject, null, 2));
   
+  // ENHANCED LOGGING: Track message sending for debugging
+  const sendTimestamp = new Date().toISOString();
+  console.log(`\n🚀 ========== SENDING MESSAGE TO DMS: ${sendTimestamp} ==========`);
+  console.log(`📤 Customer ID: ${messageObject.customer_id}`);
+  console.log(`📤 Message ID: ${messageObject.message_id}`);
+  console.log(`📤 Message Type: ${messageObject.type}`);
+  console.log(`📤 Expected Response: YES - DMS should send response back to webhook`);
+  console.log(`📤 Webhook URL: ${DMS_CONFIG.WEBHOOK_URL || 'NOT SET!'}`);
+  if (!DMS_CONFIG.WEBHOOK_URL) {
+    console.log(`⚠️  WARNING: No webhook URL configured! DMS won't know where to send responses!`);
+  }
+  console.log(`🎯 ========== MESSAGE PAYLOAD ==========`);
+  console.log(JSON.stringify(messageObject, null, 2));
+  console.log(`🎯 ========================================`);
+  
   // Use sendMessage to send the payload to DMS
   dms.sendMessage(messageObject, (response) => {
+    const responseTimestamp = new Date().toISOString();
+    console.log(`\n📥 ========== DMS RESPONSE RECEIVED: ${responseTimestamp} ==========`);
+    console.log(`📥 Status: ${response.status} ${response.statusText}`);
+    console.log(`📥 Response Data:`, response.data);
+    console.log(`📥 Time Elapsed: ${Date.now() - new Date(sendTimestamp).getTime()}ms`);
+    
     // Check if the request was successful (HTTP 2xx)
     const isSuccessful = response.status >= 200 && response.status < 300;
     
@@ -271,6 +292,12 @@ app.post('/api/messages', (req, res) => {
       console.log(`Message ${messageObject.message_id} successfully delivered to DMS, marking as delivered`);
       pendingMessages.set(messageObject.message_id, 'delivered');
     }
+    
+    console.log(`📥 ========== DMS PROCESSING COMPLETE ==========`);
+    console.log(`✅ Next Expected: DMS should send response back to webhook at ${DMS_CONFIG.WEBHOOK_URL || 'WEBHOOK_URL_NOT_SET'}`);
+    console.log(`⏱️  Expected Timeline: Response should arrive within 1-30 seconds`);
+    console.log(`🔍 Watch for: Webhook requests in server logs starting with "🔔 WEBHOOK REQUEST RECEIVED"`);
+    console.log(`📥 ================================================\n`);
     
     return res.status(response.status).json({
       status: response.status,
@@ -555,6 +582,29 @@ app.get('/api/debug/deduplication', (req, res) => {
       timestamp: msg.timestamp,
       customer_id: msg.customer_id
     }))
+  });
+});
+
+// NEW DEBUG Endpoint: Show full DMS configuration
+app.get('/api/debug/config', (req, res) => {
+  res.json({
+    DMS_CONFIG: {
+      JWT_SECRET: DMS_CONFIG.JWT_SECRET ? '****SET****' : 'NOT SET',
+      CHANNEL_ID: DMS_CONFIG.CHANNEL_ID || 'NOT SET',
+      API_URL: DMS_CONFIG.API_URL || 'NOT SET',
+      WEBHOOK_URL: DMS_CONFIG.WEBHOOK_URL || 'NOT SET'
+    },
+    ENVIRONMENT_VARS: {
+      JWT_SECRET: process.env.JWT_SECRET ? '****SET****' : 'NOT SET',
+      CHANNEL_ID: process.env.CHANNEL_ID || 'NOT SET', 
+      API_URL: process.env.API_URL || 'NOT SET',
+      WEBHOOK_URL: process.env.WEBHOOK_URL || 'NOT SET'
+    },
+    WEBHOOK_ENDPOINTS: [
+      'POST /api/dms/webhook - Main webhook endpoint',
+      'GET /api/debug/config - This debug endpoint'
+    ],
+    SUGGESTED_WEBHOOK_URL: `${req.protocol}://${req.get('host')}/api/dms/webhook`
   });
 });
 
